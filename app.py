@@ -6,7 +6,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.2.2"
+APP_VERSION = "Ver.3.2.3"
 
 st.markdown(
     f"""
@@ -50,19 +50,34 @@ else:
         st.header("💰 Live Totals")
         
         current_totals = st.session_state.expenses.groupby("Partner")['Amount'].sum()
-        
+
+        has_shared = st.session_state.has_shared_partner
+        if has_shared:
+            shared_total = current_totals.get("Shared", 0.0)
+            num_real_partners = len(st.session_state.partners) - 1
+            per_person_share = shared_total / num_real_partners if num_real_partners > 0 else 0.0
+
         for p, color in st.session_state.partners.items():
             amount = current_totals.get(p, 0.0)
             st.markdown(
                 f"""
-                <div style="padding:10px; margin-bottom:8px; background-color:white; 
+                <div style="padding:10px; margin-bottom:8px; background-color:white;
                     border-left: 6px solid {color}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     <div style="font-weight:bold; font-size:0.9em; color:#555;">{p}</div>
                     <div style="font-size:1.2em; font-weight:bold;">${amount:,.2f}</div>
                 </div>
-                """, 
+                """,
                 unsafe_allow_html=True
             )
+            if has_shared and p != "Shared":
+                st.markdown(
+                    f"""
+                    <div style="font-size:0.75em; color:#808080; margin-top:-4px; margin-bottom:8px; padding-left:16px;">
+                        +${per_person_share:,.2f} from Shared
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
         
         st.divider()
         if st.button("🗑️ Reset All Data"):

@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
-from utils import generate_excel, calculate_shared_split, write_to_google_sheets, load_category_rules, save_category_rules
+from utils import generate_excel, calculate_shared_split, write_to_google_sheets, load_category_rules, save_category_rules, load_categories, save_categories
 from setup_page import render_setup_page
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.6.0"
+APP_VERSION = "Ver.3.6.1"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -16,13 +16,15 @@ if 'setup_complete' not in st.session_state:
 if 'partners' not in st.session_state:
     st.session_state.partners = {}
 if 'categories' not in st.session_state:
-    st.session_state.categories = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
+    st.session_state.categories = load_categories()
 if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
 if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
+if 'verified_history' not in st.session_state:
+    st.session_state.verified_history = []
 
 # --- DARK/LIGHT MODE TOGGLE ---
 _, right = st.columns([6, 1])
@@ -133,6 +135,11 @@ else:
 
         if not unverified_indices:
             st.success("🎉 All expenses verified and assigned! Go to 'Final Results'.")
+            if st.session_state.verified_history:
+                if st.button("⬅️ Go Back", key="go_back_done_btn"):
+                    prev_idx = st.session_state.verified_history.pop()
+                    st.session_state.expenses.at[prev_idx, 'Verified'] = False
+                    st.rerun()
         else:
             # Get current item
             curr_idx = unverified_indices[0]
@@ -142,6 +149,12 @@ else:
             total_count = len(df)
             done_count = total_count - len(unverified_indices)
             st.progress(done_count / total_count, f"Reviewed: {done_count} / {total_count}")
+
+            if st.session_state.verified_history:
+                if st.button("⬅️ Go Back", key="go_back_btn"):
+                    prev_idx = st.session_state.verified_history.pop()
+                    st.session_state.expenses.at[prev_idx, 'Verified'] = False
+                    st.rerun()
 
             # --- EXPENSE CARD ---
             st.markdown(f"""
@@ -158,17 +171,12 @@ else:
             if pre_filled_partner and pre_filled_partner in st.session_state.partners:
                 st.info(f"💡 Excel suggests this belongs to **{pre_filled_partner}**. Click their name to confirm.")
 
-            # --- AUTO-CATEGORIZATION MATCHING ---
+            # --- AUTO-CATEGORIZATION MATCHING (exact match on full description) ---
             desc_lower = str(row['Description']).strip().lower()
-            matched_category = None
-            best_match_len = 0
-            for keyword, kw_category in st.session_state.category_rules.items():
-                if keyword in desc_lower and len(keyword) > best_match_len:
-                    matched_category = kw_category
-                    best_match_len = len(keyword)
+            matched_category = st.session_state.category_rules.get(desc_lower)
 
             if matched_category:
-                st.info(f"🏷️ Auto-category suggestion: **{matched_category}**")
+                st.info(f"🏷️ Auto-category match: **{matched_category}** (change below if needed)")
 
             st.write("")
 
@@ -192,6 +200,7 @@ else:
                     new_cat_name = st.text_input("New Category Name", key=f"new_{curr_idx}")
                     if st.button("Save Cat"):
                         st.session_state.categories.append(new_cat_name)
+                        save_categories(st.session_state.categories)
                         st.rerun()
                     final_cat = new_cat_name
 
@@ -222,6 +231,7 @@ else:
                             st.session_state.expenses.at[curr_idx, 'Category'] = assigned_cat
                             st.session_state.expenses.at[curr_idx, 'Comment'] = comment
                             st.session_state.expenses.at[curr_idx, 'Verified'] = True
+                            st.session_state.verified_history.append(curr_idx)
                             # Auto-learn category rule
                             if assigned_cat and assigned_cat != "Uncategorized":
                                 st.session_state.category_rules[desc_lower] = assigned_cat
@@ -330,30 +340,33 @@ else:
 
     # --- TAB 4: CATEGORY RULES ---
     with tab_rules:
-        st.header("🏷️ Category Rules")
-        st.caption("Manage keyword→category mappings. Rules are learned automatically when you verify expenses, or you can add them manually.")
+        st.header("🏷️ Category References")
+        st.caption("These are learned automatically when you verify expenses. You can also edit them here or directly in Google Sheets.")
 
-        with st.expander("➕ Add New Rule", expanded=False):
-            new_keyword = st.text_input("Keyword (substring to match in description)", key="new_rule_keyword")
-            new_rule_cat = st.selectbox("Category", st.session_state.categories, key="new_rule_cat")
-            if st.button("Save Rule", key="save_rule_btn"):
-                if new_keyword.strip():
-                    st.session_state.category_rules[new_keyword.strip().lower()] = new_rule_cat
-                    save_category_rules(st.session_state.category_rules)
-                    st.rerun()
-                else:
-                    st.warning("Please enter a keyword.")
-
-        st.subheader("Existing Rules")
         rules = st.session_state.category_rules
         if rules:
-            rules_data = [{"Keyword": k, "Category": v} for k, v in sorted(rules.items())]
-            st.dataframe(pd.DataFrame(rules_data), use_container_width=True, hide_index=True)
-
-            rule_to_delete = st.selectbox("Select rule to delete", sorted(rules.keys()), key="delete_rule_select")
-            if st.button("🗑️ Delete Rule", key="delete_rule_btn"):
-                del st.session_state.category_rules[rule_to_delete]
-                save_category_rules(st.session_state.category_rules)
+            rules_data = [{"Description": k, "Category": v} for k, v in sorted(rules.items())]
+            rules_df = pd.DataFrame(rules_data)
+            edited_rules = st.data_editor(
+                rules_df,
+                column_config={
+                    "Category": st.column_config.SelectboxColumn(
+                        options=st.session_state.categories, required=True
+                    )
+                },
+                use_container_width=True, hide_index=True, num_rows="dynamic",
+                key="rules_editor"
+            )
+            # Sync edits back
+            if not edited_rules.equals(rules_df):
+                new_rules = {}
+                for _, r in edited_rules.iterrows():
+                    desc = str(r["Description"]).strip().lower()
+                    cat = str(r["Category"]).strip()
+                    if desc and cat:
+                        new_rules[desc] = cat
+                st.session_state.category_rules = new_rules
+                save_category_rules(new_rules)
                 st.rerun()
         else:
-            st.info("No rules yet. Rules are learned automatically as you verify expenses, or add one manually above.")
+            st.info("No rules yet. Rules are learned automatically as you verify expenses.")

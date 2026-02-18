@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from utils import load_excel, extract_categories
+from utils import load_excel, extract_categories, save_categories
 
 def render_setup_page():
     st.title("🧾 Expense App Setup")
@@ -96,6 +96,7 @@ def render_setup_page():
                         for cat in imported_cats:
                             if cat not in st.session_state.categories:
                                 st.session_state.categories.append(cat)
+                        save_categories(st.session_state.categories)
                         
                         # 2. Append to Session State
                         st.session_state.expenses = pd.concat([st.session_state.expenses, new_data], ignore_index=True)

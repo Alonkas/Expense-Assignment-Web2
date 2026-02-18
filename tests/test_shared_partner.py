@@ -236,19 +236,13 @@ class TestStreamlitIntegration:
 # =============================================
 
 class TestCategoryRulesMatching:
-    """Pure-Python tests for the keyword→category matching algorithm."""
+    """Pure-Python tests for the description→category exact matching algorithm."""
 
     @staticmethod
     def match(rules, description):
-        """Replicate the matching logic from app.py Focus Mode."""
+        """Replicate the matching logic from app.py Focus Mode (exact match)."""
         desc_lower = str(description).strip().lower()
-        matched_category = None
-        best_match_len = 0
-        for keyword, kw_category in rules.items():
-            if keyword in desc_lower and len(keyword) > best_match_len:
-                matched_category = kw_category
-                best_match_len = len(keyword)
-        return matched_category
+        return rules.get(desc_lower)
 
     def test_exact_match(self):
         rules = {"grocery store": "Groceries"}
@@ -262,24 +256,80 @@ class TestCategoryRulesMatching:
         rules = {"grocery store": "Groceries"}
         assert self.match(rules, "gas station") is None
 
-    def test_longer_keyword_wins(self):
-        rules = {
-            "electric": "Utilities",
-            "electric company payment": "Electricity",
-        }
-        assert self.match(rules, "electric company payment march") == "Electricity"
-
     def test_empty_rules(self):
         assert self.match({}, "anything at all") is None
 
-    def test_substring_match(self):
+    def test_substring_no_longer_matches(self):
+        """Substring should NOT match — only exact full description matches."""
         rules = {"walmart": "Groceries"}
-        assert self.match(rules, "WALMART SUPERCENTER #1234") == "Groceries"
+        assert self.match(rules, "WALMART SUPERCENTER #1234") is None
 
-    def test_multiple_matches_longest_wins(self):
-        rules = {
-            "shell": "Fuel",
-            "shell gas": "Fuel",
-            "shell gas station": "Fuel & Auto",
-        }
-        assert self.match(rules, "shell gas station highway 101") == "Fuel & Auto"
+    def test_exact_match_with_whitespace(self):
+        """Leading/trailing whitespace is stripped before matching."""
+        rules = {"grocery store": "Groceries"}
+        assert self.match(rules, "  GROCERY STORE  ") == "Groceries"
+
+    def test_different_description_no_match(self):
+        """A partial or different description should not match."""
+        rules = {"shell gas station": "Fuel & Auto"}
+        assert self.match(rules, "shell gas station highway 101") is None
+        assert self.match(rules, "shell gas") is None
+
+
+# =============================================
+# Go-back history stack tests
+# =============================================
+
+class TestGoBackHistory:
+    """Pure-Python tests for the verified_history stack logic."""
+
+    @staticmethod
+    def make_df(n):
+        """Create a DataFrame with n expenses, all verified."""
+        records = []
+        for i in range(n):
+            records.append({
+                'Date': datetime.date(2025, 1, i + 1),
+                'Description': f'Item {i + 1}',
+                'Amount': 10.0 * (i + 1),
+                'Partner': 'Alice',
+                'Category': 'Groceries',
+                'Comment': '',
+                'Verified': True,
+            })
+        return pd.DataFrame(records)
+
+    def test_go_back_pops_last_and_unverifies(self):
+        """Going back pops the last index and sets Verified=False."""
+        df = self.make_df(3)
+        history = [0, 1, 2]
+
+        prev_idx = history.pop()
+        df.at[prev_idx, 'Verified'] = False
+
+        assert prev_idx == 2
+        assert df.at[2, 'Verified'] == False
+        assert history == [0, 1]
+
+    def test_empty_history_means_no_go_back(self):
+        """Empty history means go-back is unavailable."""
+        history = []
+        assert len(history) == 0
+
+    def test_multiple_go_backs_reverse_order(self):
+        """Multiple go-backs undo in LIFO order."""
+        df = self.make_df(4)
+        history = [0, 1, 2, 3]
+
+        popped = []
+        for _ in range(3):
+            prev_idx = history.pop()
+            df.at[prev_idx, 'Verified'] = False
+            popped.append(prev_idx)
+
+        assert popped == [3, 2, 1]
+        assert history == [0]
+        assert df.at[3, 'Verified'] == False
+        assert df.at[2, 'Verified'] == False
+        assert df.at[1, 'Verified'] == False
+        assert df.at[0, 'Verified'] == True

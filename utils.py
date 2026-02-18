@@ -57,8 +57,62 @@ def extract_categories(df):
         return [str(c) for c in unique_cats if str(c) != "Uncategorized"]
     return []
 
+def load_categories():
+    """Load categories list from the 'Categories' Google Sheet tab."""
+    defaults = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]), scopes=scopes
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+
+        try:
+            ws = spreadsheet.worksheet("Categories")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet("Categories", rows=len(defaults) + 1, cols=1)
+            ws.update([["Category"]] + [[c] for c in defaults], value_input_option="USER_ENTERED")
+            return defaults
+
+        records = ws.get_all_records()
+        categories = [str(row.get("Category", "")).strip() for row in records if str(row.get("Category", "")).strip()]
+        return categories if categories else defaults
+    except Exception as e:
+        st.warning(f"⚠️ Could not load categories from Google Sheets: {e}")
+        return defaults
+
+
+def save_categories(categories):
+    """Write the categories list to the 'Categories' Google Sheet tab."""
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]), scopes=scopes
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+
+        try:
+            ws = spreadsheet.worksheet("Categories")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet("Categories", rows=len(categories) + 1, cols=1)
+
+        ws.clear()
+        rows = [["Category"]] + [[c] for c in categories]
+        ws.update(rows, value_input_option="USER_ENTERED")
+    except Exception:
+        pass
+
+
 def load_category_rules():
-    """Load keyword→category rules from the 'Category Rules' Google Sheet."""
+    """Load description→category rules from the 'Category Rules' Google Sheet."""
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -78,17 +132,17 @@ def load_category_rules():
         records = ws.get_all_records()
         rules = {}
         for row in records:
-            keyword = str(row.get("Keyword", "")).strip().lower()
+            description = str(row.get("Description", "")).strip().lower()
             category = str(row.get("Category", "")).strip()
-            if keyword and category:
-                rules[keyword] = category
+            if description and category:
+                rules[description] = category
         return rules
     except Exception:
         return {}
 
 
 def save_category_rules(rules):
-    """Save keyword→category rules to the 'Category Rules' Google Sheet."""
+    """Save description→category rules to the 'Category Rules' Google Sheet."""
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -106,9 +160,9 @@ def save_category_rules(rules):
             ws = spreadsheet.add_worksheet("Category Rules", rows=1, cols=2)
 
         ws.clear()
-        rows = [["Keyword", "Category"]]
-        for keyword in sorted(rules.keys()):
-            rows.append([keyword, rules[keyword]])
+        rows = [["Description", "Category"]]
+        for description in sorted(rules.keys()):
+            rows.append([description, rules[description]])
         ws.update(rows, value_input_option="USER_ENTERED")
     except Exception:
         pass

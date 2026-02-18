@@ -6,12 +6,12 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.2.3"
+APP_VERSION = "Ver.3.3.0"
 
 st.markdown(
     f"""
     <div style="position:fixed; bottom:10px; left:10px; z-index:9999;
-        font-size:0.75em; color:#999; background:rgba(255,255,255,0.8);
+        font-size:0.75em; color:#888; background:rgba(30,30,30,0.8);
         padding:2px 8px; border-radius:4px;">
         {APP_VERSION}
     </div>
@@ -61,9 +61,9 @@ else:
             amount = current_totals.get(p, 0.0)
             st.markdown(
                 f"""
-                <div style="padding:10px; margin-bottom:8px; background-color:white;
+                <div style="padding:10px; margin-bottom:8px; background-color:#262730;
                     border-left: 6px solid {color}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-weight:bold; font-size:0.9em; color:#555;">{p}</div>
+                    <div style="font-weight:bold; font-size:0.9em; color:#ccc;">{p}</div>
                     <div style="font-size:1.2em; font-weight:bold;">${amount:,.2f}</div>
                 </div>
                 """,
@@ -72,7 +72,7 @@ else:
             if has_shared and p != "Shared":
                 st.markdown(
                     f"""
-                    <div style="font-size:0.75em; color:#808080; margin-top:-4px; margin-bottom:8px; padding-left:16px;">
+                    <div style="font-size:0.75em; color:#aaa; margin-top:-4px; margin-bottom:8px; padding-left:16px;">
                         +${per_person_share:,.2f} from Shared
                     </div>
                     """,
@@ -106,7 +106,6 @@ else:
         unverified_indices = df[df['Verified'] == False].index.tolist()
         
         if not unverified_indices:
-            st.balloons()
             st.success("🎉 All expenses verified and assigned! Go to 'Final Results'.")
         else:
             # Get current item
@@ -120,11 +119,11 @@ else:
 
             # --- EXPENSE CARD ---
             st.markdown(f"""
-            <div style="text-align:center; padding:30px; border-radius:15px; background:white; 
-                border:1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{row['Date']}</div>
+            <div style="text-align:center; padding:30px; border-radius:15px; background:#262730;
+                border:1px solid #444; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                <div style="color:#aaa; font-size:1.1em; margin-bottom:5px;">{row['Date']}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{row['Description']}</div>
-                <div style="font-size:2.5em; font-weight:900; color:#333;">${row['Amount']:.2f}</div>
+                <div style="font-size:2.5em; font-weight:900; color:#eee;">${row['Amount']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
             

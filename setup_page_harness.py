@@ -12,6 +12,8 @@ if 'categories' not in st.session_state:
     st.session_state.categories = []
 if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
+if 'category_rules' not in st.session_state:
+    st.session_state.category_rules = {}
 
 from setup_page import render_setup_page
 render_setup_page()

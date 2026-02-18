@@ -57,6 +57,63 @@ def extract_categories(df):
         return [str(c) for c in unique_cats if str(c) != "Uncategorized"]
     return []
 
+def load_category_rules():
+    """Load keyword→category rules from the 'Category Rules' Google Sheet."""
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]), scopes=scopes
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+
+        try:
+            ws = spreadsheet.worksheet("Category Rules")
+        except gspread.exceptions.WorksheetNotFound:
+            return {}
+
+        records = ws.get_all_records()
+        rules = {}
+        for row in records:
+            keyword = str(row.get("Keyword", "")).strip().lower()
+            category = str(row.get("Category", "")).strip()
+            if keyword and category:
+                rules[keyword] = category
+        return rules
+    except Exception:
+        return {}
+
+
+def save_category_rules(rules):
+    """Save keyword→category rules to the 'Category Rules' Google Sheet."""
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]), scopes=scopes
+        )
+        gc = gspread.authorize(creds)
+        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+
+        try:
+            ws = spreadsheet.worksheet("Category Rules")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = spreadsheet.add_worksheet("Category Rules", rows=1, cols=2)
+
+        ws.clear()
+        rows = [["Keyword", "Category"]]
+        for keyword in sorted(rules.keys()):
+            rows.append([keyword, rules[keyword]])
+        ws.update(rows, value_input_option="USER_ENTERED")
+    except Exception:
+        pass
+
+
 def calculate_shared_split(df, partners, has_shared_partner):
     """Calculate per-person breakdown including shared expense splitting.
 

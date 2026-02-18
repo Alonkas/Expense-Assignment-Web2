@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
-from utils import generate_excel, calculate_shared_split, write_to_google_sheets
+from utils import generate_excel, calculate_shared_split, write_to_google_sheets, load_category_rules, save_category_rules
 from setup_page import render_setup_page
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.5.0"
+APP_VERSION = "Ver.3.6.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -21,6 +21,8 @@ if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
+if 'category_rules' not in st.session_state:
+    st.session_state.category_rules = load_category_rules()
 
 # --- DARK/LIGHT MODE TOGGLE ---
 _, right = st.columns([6, 1])
@@ -118,7 +120,7 @@ else:
 
     st.title("Expense Dashboard")
 
-    tab_focus, tab_table, tab_results = st.tabs(["🎯 Focus Mode (Verification)", "📊 Table View", "🏁 Final Results"])
+    tab_focus, tab_table, tab_results, tab_rules = st.tabs(["🎯 Focus Mode (Verification)", "📊 Table View", "🏁 Final Results", "🏷️ Category Rules"])
 
     # --- TAB 1: FOCUS MODE ---
     with tab_focus:
@@ -156,13 +158,29 @@ else:
             if pre_filled_partner and pre_filled_partner in st.session_state.partners:
                 st.info(f"💡 Excel suggests this belongs to **{pre_filled_partner}**. Click their name to confirm.")
 
+            # --- AUTO-CATEGORIZATION MATCHING ---
+            desc_lower = str(row['Description']).strip().lower()
+            matched_category = None
+            best_match_len = 0
+            for keyword, kw_category in st.session_state.category_rules.items():
+                if keyword in desc_lower and len(keyword) > best_match_len:
+                    matched_category = kw_category
+                    best_match_len = len(keyword)
+
+            if matched_category:
+                st.info(f"🏷️ Auto-category suggestion: **{matched_category}**")
+
             st.write("")
 
             # --- INPUTS ---
             c1, c2 = st.columns([1, 1])
             with c1:
-                # Category Handling
-                current_cat = row['Category'] if row['Category'] in st.session_state.categories else "Uncategorized"
+                # Category Handling — prefer matched_category, then existing category
+                if matched_category and matched_category in st.session_state.categories:
+                    default_cat = matched_category
+                else:
+                    default_cat = row['Category'] if row['Category'] in st.session_state.categories else "Uncategorized"
+                current_cat = default_cat
 
                 cat_options = st.session_state.categories + ["➕ Add New..."]
                 selected_cat = st.selectbox("Category", cat_options,
@@ -199,10 +217,15 @@ else:
                         type_btn = "primary" if name == pre_filled_partner else "secondary"
 
                         if st.button(label, key=f"btn_{name}_{curr_idx}", type=type_btn, use_container_width=True):
+                            assigned_cat = final_cat if final_cat != "➕ Add New..." else "Uncategorized"
                             st.session_state.expenses.at[curr_idx, 'Partner'] = name
-                            st.session_state.expenses.at[curr_idx, 'Category'] = final_cat if final_cat != "➕ Add New..." else "Uncategorized"
+                            st.session_state.expenses.at[curr_idx, 'Category'] = assigned_cat
                             st.session_state.expenses.at[curr_idx, 'Comment'] = comment
                             st.session_state.expenses.at[curr_idx, 'Verified'] = True
+                            # Auto-learn category rule
+                            if assigned_cat and assigned_cat != "Uncategorized":
+                                st.session_state.category_rules[desc_lower] = assigned_cat
+                                save_category_rules(st.session_state.category_rules)
                             st.rerun()
             else:
                 st.error("⚠️ No partners found! Please click 'Reset All Data' in the sidebar to setup partners.")
@@ -304,3 +327,33 @@ else:
                 p_df = res_df[res_df['Partner'] == p]
                 if not p_df.empty:
                     st.download_button(f"📥 {p}", data=generate_excel(p_df), file_name=f"{p}.xlsx", key=f"dl_{p}")
+
+    # --- TAB 4: CATEGORY RULES ---
+    with tab_rules:
+        st.header("🏷️ Category Rules")
+        st.caption("Manage keyword→category mappings. Rules are learned automatically when you verify expenses, or you can add them manually.")
+
+        with st.expander("➕ Add New Rule", expanded=False):
+            new_keyword = st.text_input("Keyword (substring to match in description)", key="new_rule_keyword")
+            new_rule_cat = st.selectbox("Category", st.session_state.categories, key="new_rule_cat")
+            if st.button("Save Rule", key="save_rule_btn"):
+                if new_keyword.strip():
+                    st.session_state.category_rules[new_keyword.strip().lower()] = new_rule_cat
+                    save_category_rules(st.session_state.category_rules)
+                    st.rerun()
+                else:
+                    st.warning("Please enter a keyword.")
+
+        st.subheader("Existing Rules")
+        rules = st.session_state.category_rules
+        if rules:
+            rules_data = [{"Keyword": k, "Category": v} for k, v in sorted(rules.items())]
+            st.dataframe(pd.DataFrame(rules_data), use_container_width=True, hide_index=True)
+
+            rule_to_delete = st.selectbox("Select rule to delete", sorted(rules.keys()), key="delete_rule_select")
+            if st.button("🗑️ Delete Rule", key="delete_rule_btn"):
+                del st.session_state.category_rules[rule_to_delete]
+                save_category_rules(st.session_state.category_rules)
+                st.rerun()
+        else:
+            st.info("No rules yet. Rules are learned automatically as you verify expenses, or add one manually above.")

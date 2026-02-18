@@ -41,11 +41,9 @@ def load_excel(file, mapping):
     df = df.dropna(subset=['Date'])
     
     df['Partner'] = df['Partner'].replace(["", " ", "nan"], None)
-    # Don't overwrite Category yet, we want to save the Hebrew ones
     df['Category'] = df['Category'].fillna("Uncategorized")
     df['Comment'] = df['Comment'].fillna("")
 
-    # --- NEW: VERIFICATION FLAG ---
     df['Verified'] = False
 
     return df
@@ -102,7 +100,6 @@ def calculate_shared_split(df, partners, has_shared_partner):
         'grand_totals': grand_totals,
         'real_partners': real_partners,
     }
-
 
 def write_to_google_sheets(df, partners, has_shared_partner):
     """Write expense data to an existing Google Sheet and return its URL."""

@@ -6,7 +6,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.4.1"
+APP_VERSION = "Ver.3.5.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -14,7 +14,7 @@ if 'expenses' not in st.session_state:
 if 'setup_complete' not in st.session_state:
     st.session_state.setup_complete = False
 if 'partners' not in st.session_state:
-    st.session_state.partners = {} # Empty dict
+    st.session_state.partners = {}
 if 'categories' not in st.session_state:
     st.session_state.categories = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
 if 'has_shared_partner' not in st.session_state:
@@ -118,19 +118,14 @@ else:
 
     st.title("Expense Dashboard")
 
-    # The rest of your app.py remains exactly the same as before...
-    # (Copy the tabs logic: Focus Mode, Table View, Results from previous version)
-    # ...
-
     tab_focus, tab_table, tab_results = st.tabs(["🎯 Focus Mode (Verification)", "📊 Table View", "🏁 Final Results"])
 
     # --- TAB 1: FOCUS MODE ---
     with tab_focus:
         df = st.session_state.expenses
 
-        # LOGIC CHANGE: Filter by 'Verified' is False
         if 'Verified' not in df.columns:
-            df['Verified'] = False # Safety fallback
+            df['Verified'] = False
 
         unverified_indices = df[df['Verified'] == False].index.tolist()
 
@@ -213,9 +208,6 @@ else:
                 st.error("⚠️ No partners found! Please click 'Reset All Data' in the sidebar to setup partners.")
 
 
-
-
-
     # --- TAB 2: TABLE VIEW ---
     with tab_table:
         st.info("📝 Advanced Mode: Edits here are auto-saved.")
@@ -247,7 +239,7 @@ else:
     with tab_results:
         st.header("📊 Final Reports")
         res_df = st.session_state.expenses
-        has_shared = st.session_state.get('has_shared_partner', False)
+        has_shared = st.session_state.has_shared_partner
 
         if res_df.empty:
             st.warning("No data.")

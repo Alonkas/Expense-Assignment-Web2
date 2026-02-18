@@ -6,18 +6,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.4.0"
-
-st.markdown(
-    f"""
-    <div style="position:fixed; bottom:10px; left:10px; z-index:9999;
-        font-size:0.75em; color:#999; background:rgba(255,255,255,0.8);
-        padding:2px 8px; border-radius:4px;">
-        {APP_VERSION}
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+APP_VERSION = "Ver.3.4.1"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -30,6 +19,46 @@ if 'categories' not in st.session_state:
     st.session_state.categories = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
 if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+# --- DARK/LIGHT MODE TOGGLE ---
+_, right = st.columns([6, 1])
+with right:
+    dark = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, key="dark_toggle")
+    if dark != st.session_state.dark_mode:
+        st.session_state.dark_mode = dark
+        st.rerun()
+
+if st.session_state.dark_mode:
+    badge_bg = "rgba(30,30,30,0.8)"
+    st.markdown("""
+        <style>
+        .stApp, [data-testid="stAppViewContainer"] { background-color: #1e1e1e; color: #e0e0e0; }
+        [data-testid="stSidebar"] { background-color: #2d2d2d; color: #e0e0e0; }
+        [data-testid="stHeader"] { background-color: #1e1e1e; }
+        .stTabs [data-baseweb="tab-panel"] { background-color: #1e1e1e; }
+        .stTabs [data-baseweb="tab-list"] { background-color: #2d2d2d; }
+        .stMarkdown, .stText, h1, h2, h3, h4, p, span, label, div { color: #e0e0e0 !important; }
+        [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #e0e0e0 !important; }
+        [data-testid="stMetricDelta"] { color: #aaa !important; }
+        .stDataFrame { background-color: #2d2d2d; }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    badge_bg = "rgba(255,255,255,0.8)"
+
+# Version badge
+st.markdown(
+    f"""
+    <div style="position:fixed; bottom:10px; left:10px; z-index:9999;
+        font-size:0.75em; color:#999; background:{badge_bg};
+        padding:2px 8px; border-radius:4px;">
+        {APP_VERSION}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ==========================================
 # FLOW CONTROL
@@ -45,10 +74,10 @@ else:
         if st.button("📂 Add More Files"):
             st.session_state.setup_complete = False
             st.rerun()
-            
+
         st.divider()
         st.header("💰 Live Totals")
-        
+
         current_totals = st.session_state.expenses.groupby("Partner")['Amount'].sum()
 
         has_shared = st.session_state.has_shared_partner
@@ -78,7 +107,7 @@ else:
                     """,
                     unsafe_allow_html=True
                 )
-        
+
         st.divider()
         if st.button("🗑️ Reset All Data"):
             st.session_state.setup_complete = False
@@ -92,27 +121,26 @@ else:
     # The rest of your app.py remains exactly the same as before...
     # (Copy the tabs logic: Focus Mode, Table View, Results from previous version)
     # ...
-    
+
     tab_focus, tab_table, tab_results = st.tabs(["🎯 Focus Mode (Verification)", "📊 Table View", "🏁 Final Results"])
 
     # --- TAB 1: FOCUS MODE ---
     with tab_focus:
         df = st.session_state.expenses
-        
+
         # LOGIC CHANGE: Filter by 'Verified' is False
         if 'Verified' not in df.columns:
             df['Verified'] = False # Safety fallback
-            
+
         unverified_indices = df[df['Verified'] == False].index.tolist()
-        
+
         if not unverified_indices:
-            st.balloons()
             st.success("🎉 All expenses verified and assigned! Go to 'Final Results'.")
         else:
             # Get current item
             curr_idx = unverified_indices[0]
             row = df.loc[curr_idx]
-            
+
             # Progress Bar
             total_count = len(df)
             done_count = total_count - len(unverified_indices)
@@ -120,32 +148,32 @@ else:
 
             # --- EXPENSE CARD ---
             st.markdown(f"""
-            <div style="text-align:center; padding:30px; border-radius:15px; background:white; 
+            <div style="text-align:center; padding:30px; border-radius:15px; background:white;
                 border:1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{row['Date']}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{row['Description']}</div>
                 <div style="font-size:2.5em; font-weight:900; color:#333;">${row['Amount']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            
+
             # Suggestion Alert
             pre_filled_partner = row['Partner']
             if pre_filled_partner and pre_filled_partner in st.session_state.partners:
                 st.info(f"💡 Excel suggests this belongs to **{pre_filled_partner}**. Click their name to confirm.")
 
-            st.write("") 
+            st.write("")
 
             # --- INPUTS ---
             c1, c2 = st.columns([1, 1])
             with c1:
                 # Category Handling
                 current_cat = row['Category'] if row['Category'] in st.session_state.categories else "Uncategorized"
-                
+
                 cat_options = st.session_state.categories + ["➕ Add New..."]
-                selected_cat = st.selectbox("Category", cat_options, 
+                selected_cat = st.selectbox("Category", cat_options,
                                           index=st.session_state.categories.index(current_cat) if current_cat in st.session_state.categories else 0,
                                           key=f"cat_{curr_idx}")
-                
+
                 final_cat = selected_cat
                 if selected_cat == "➕ Add New...":
                     new_cat_name = st.text_input("New Category Name", key=f"new_{curr_idx}")
@@ -159,41 +187,42 @@ else:
 
             # --- DYNAMIC PARTNER BUTTONS ---
             st.write("### Assign & Verify:")
-            
+
             partners = list(st.session_state.partners.items())
             num_p = len(partners)
 
             if num_p > 0:
                 # SAFEGUARD: Ensure we request at least 1 column, max 4
                 num_cols = min(num_p, 4)
-                cols = st.columns(num_cols) 
-                
+                cols = st.columns(num_cols)
+
                 for i, (name, color) in enumerate(partners):
                     col_idx = i % num_cols  # Wrap buttons if we have more partners than columns
                     with cols[col_idx]:
                         # Highlight button if it matches the pre-filled partner
                         label = f"✅ Confirm {name}" if name == pre_filled_partner else f"👤 {name}"
                         type_btn = "primary" if name == pre_filled_partner else "secondary"
-                        
+
                         if st.button(label, key=f"btn_{name}_{curr_idx}", type=type_btn, use_container_width=True):
                             st.session_state.expenses.at[curr_idx, 'Partner'] = name
                             st.session_state.expenses.at[curr_idx, 'Category'] = final_cat if final_cat != "➕ Add New..." else "Uncategorized"
                             st.session_state.expenses.at[curr_idx, 'Comment'] = comment
-                            st.session_state.expenses.at[curr_idx, 'Verified'] = True 
+                            st.session_state.expenses.at[curr_idx, 'Verified'] = True
                             st.rerun()
             else:
                 st.error("⚠️ No partners found! Please click 'Reset All Data' in the sidebar to setup partners.")
 
 
-                
+
+
 
     # --- TAB 2: TABLE VIEW ---
     with tab_table:
         st.info("📝 Advanced Mode: Edits here are auto-saved.")
-        
+
         # Hide Verified column from editor but keep it for logic
         view_df = st.session_state.expenses.drop(columns=['Verified'])
-        
+
         edited = st.data_editor(
             view_df,
             column_config={
@@ -205,7 +234,7 @@ else:
             num_rows="dynamic",
             height=500
         )
-        
+
         if not edited.equals(view_df):
             # If edited in table, we assume it's verified
             # We need to merge the edits back into the main DF which has the 'Verified' col

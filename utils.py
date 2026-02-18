@@ -1,6 +1,8 @@
 import pandas as pd
 import io
 import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
 
 def load_excel(file, mapping):
     try:
@@ -100,6 +102,70 @@ def calculate_shared_split(df, partners, has_shared_partner):
         'grand_totals': grand_totals,
         'real_partners': real_partners,
     }
+
+
+def write_to_google_sheets(df, partners, has_shared_partner):
+    """Write expense data to an existing Google Sheet and return its URL."""
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(
+        dict(st.secrets["gcp_service_account"]), scopes=scopes
+    )
+    gc = gspread.authorize(creds)
+
+    # Open existing spreadsheet by ID
+    spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+
+    # --- Worksheet 1: All Expenses ---
+    export_df = df.drop(columns=["Verified"], errors="ignore").copy()
+    if "Date" in export_df.columns:
+        export_df["Date"] = export_df["Date"].astype(str)
+    export_df = export_df.fillna("")
+
+    try:
+        ws1 = spreadsheet.worksheet("All Expenses")
+    except gspread.exceptions.WorksheetNotFound:
+        ws1 = spreadsheet.add_worksheet("All Expenses", rows=1, cols=1)
+    ws1.clear()
+    ws1.update(
+        [export_df.columns.tolist()] + export_df.values.tolist(),
+        value_input_option="USER_ENTERED",
+    )
+
+    # --- Worksheet 2: Summary ---
+    try:
+        ws2 = spreadsheet.worksheet("Summary")
+    except gspread.exceptions.WorksheetNotFound:
+        ws2 = spreadsheet.add_worksheet("Summary", rows=20, cols=10)
+    ws2.clear()
+
+    if has_shared_partner:
+        breakdown = calculate_shared_split(df, partners, has_shared_partner)
+        rows = [["Partner", "Own Total", "Share of Shared", "Grand Total"]]
+        for p in breakdown["real_partners"]:
+            rows.append([
+                p,
+                round(breakdown["individual_totals"][p], 2),
+                round(breakdown["per_person_share"], 2),
+                round(breakdown["grand_totals"][p], 2),
+            ])
+        rows.append([
+            "Shared Total",
+            round(breakdown["shared_total"], 2),
+            "",
+            "",
+        ])
+    else:
+        rows = [["Partner", "Total"]]
+        for p in partners:
+            total = df.loc[df["Partner"] == p, "Amount"].sum()
+            rows.append([p, round(total, 2)])
+
+    ws2.update(rows, value_input_option="USER_ENTERED")
+
+    return spreadsheet.url
 
 
 def generate_excel(df, partners=None, has_shared_partner=False):

@@ -107,8 +107,8 @@ def save_categories(categories):
         ws.clear()
         rows = [["Category"]] + [[c] for c in categories]
         ws.update(rows, value_input_option="USER_ENTERED")
-    except Exception:
-        pass
+    except Exception as e:
+        st.warning(f"⚠️ Could not save categories to Google Sheets: {e}")
 
 
 def load_category_rules():
@@ -164,8 +164,8 @@ def save_category_rules(rules):
         for description in sorted(rules.keys()):
             rows.append([description, rules[description]])
         ws.update(rows, value_input_option="USER_ENTERED")
-    except Exception:
-        pass
+    except Exception as e:
+        st.warning(f"⚠️ Could not save category rules to Google Sheets: {e}")
 
 
 def calculate_shared_split(df, partners, has_shared_partner):

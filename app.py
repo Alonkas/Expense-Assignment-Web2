@@ -37,6 +37,8 @@ with right:
 
 if st.session_state.dark_mode:
     badge_bg = "rgba(30,30,30,0.8)"
+    card_bg = "#2d2d2d"
+    card_text = "#e0e0e0"
     st.markdown("""
         <style>
         .stApp, [data-testid="stAppViewContainer"] { background-color: #1e1e1e; color: #e0e0e0; }
@@ -52,6 +54,8 @@ if st.session_state.dark_mode:
     """, unsafe_allow_html=True)
 else:
     badge_bg = "rgba(255,255,255,0.8)"
+    card_bg = "white"
+    card_text = "#333"
 
 # Version badge
 st.markdown(
@@ -95,9 +99,9 @@ else:
             amount = current_totals.get(p, 0.0)
             st.markdown(
                 f"""
-                <div style="padding:10px; margin-bottom:8px; background-color:white;
+                <div style="padding:10px; margin-bottom:8px; background-color:{card_bg};
                     border-left: 6px solid {color}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-weight:bold; font-size:0.9em; color:#555;">{html.escape(p)}</div>
+                    <div style="font-weight:bold; font-size:0.9em; color:{card_text};">{html.escape(p)}</div>
                     <div style="font-size:1.2em; font-weight:bold;">${amount:,.2f}</div>
                 </div>
                 """,
@@ -159,11 +163,11 @@ else:
 
             # --- EXPENSE CARD ---
             st.markdown(f"""
-            <div style="text-align:center; padding:30px; border-radius:15px; background:white;
+            <div style="text-align:center; padding:30px; border-radius:15px; background:{card_bg};
                 border:1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{html.escape(str(row['Date']))}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{html.escape(str(row['Description']))}</div>
-                <div style="font-size:2.5em; font-weight:900; color:#333;">${row['Amount']:.2f}</div>
+                <div style="font-size:2.5em; font-weight:900; color:{card_text};">${row['Amount']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -227,7 +231,7 @@ else:
                         type_btn = "primary" if name == pre_filled_partner else "secondary"
 
                         if st.button(label, key=f"btn_{name}_{curr_idx}", type=type_btn, use_container_width=True):
-                            assigned_cat = final_cat if final_cat != "➕ Add New..." else "Uncategorized"
+                            assigned_cat = final_cat if (final_cat and final_cat != "➕ Add New...") else "Uncategorized"
                             st.session_state.expenses.at[curr_idx, 'Partner'] = name
                             st.session_state.expenses.at[curr_idx, 'Category'] = assigned_cat
                             st.session_state.expenses.at[curr_idx, 'Comment'] = comment

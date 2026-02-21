@@ -57,19 +57,24 @@ def extract_categories(df):
         return [str(c) for c in unique_cats if str(c) != "Uncategorized"]
     return []
 
+def _get_spreadsheet():
+    """Return the configured gspread Spreadsheet object."""
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(
+        dict(st.secrets["gcp_service_account"]), scopes=scopes
+    )
+    gc = gspread.authorize(creds)
+    return gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+
+
 def load_categories():
     """Load categories list from the 'Categories' Google Sheet tab."""
     defaults = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
     try:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(
-            dict(st.secrets["gcp_service_account"]), scopes=scopes
-        )
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+        spreadsheet = _get_spreadsheet()
 
         try:
             ws = spreadsheet.worksheet("Categories")
@@ -89,15 +94,7 @@ def load_categories():
 def save_categories(categories):
     """Write the categories list to the 'Categories' Google Sheet tab."""
     try:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(
-            dict(st.secrets["gcp_service_account"]), scopes=scopes
-        )
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+        spreadsheet = _get_spreadsheet()
 
         try:
             ws = spreadsheet.worksheet("Categories")
@@ -114,15 +111,7 @@ def save_categories(categories):
 def load_category_rules():
     """Load description→category rules from the 'Category Rules' Google Sheet."""
     try:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(
-            dict(st.secrets["gcp_service_account"]), scopes=scopes
-        )
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+        spreadsheet = _get_spreadsheet()
 
         try:
             ws = spreadsheet.worksheet("Category Rules")
@@ -144,15 +133,7 @@ def load_category_rules():
 def save_category_rules(rules):
     """Save description→category rules to the 'Category Rules' Google Sheet."""
     try:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(
-            dict(st.secrets["gcp_service_account"]), scopes=scopes
-        )
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+        spreadsheet = _get_spreadsheet()
 
         try:
             ws = spreadsheet.worksheet("Category Rules")
@@ -214,17 +195,7 @@ def calculate_shared_split(df, partners, has_shared_partner):
 
 def write_to_google_sheets(df, partners, has_shared_partner):
     """Write expense data to an existing Google Sheet and return its URL."""
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]), scopes=scopes
-    )
-    gc = gspread.authorize(creds)
-
-    # Open existing spreadsheet by ID
-    spreadsheet = gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
+    spreadsheet = _get_spreadsheet()
 
     # --- Worksheet 1: All Expenses ---
     export_df = df.drop(columns=["Verified"], errors="ignore").copy()
@@ -285,7 +256,8 @@ def generate_excel(df, partners=None, has_shared_partner=False):
         worksheet = writer.sheets['Expenses']
         for i, col in enumerate(export_df.columns):
             # precise column width for mixed languages
-            max_len = max(export_df[col].astype(str).map(len).max(), len(col)) + 5
+            col_max = export_df[col].astype(str).map(len).max()
+            max_len = max(col_max if pd.notna(col_max) else 0, len(col)) + 5
             worksheet.set_column(i, i, max_len)
 
         # Summary sheet when shared partner is enabled
@@ -312,7 +284,8 @@ def generate_excel(df, partners=None, has_shared_partner=False):
 
             ws = writer.sheets['Summary']
             for i, col in enumerate(summary_df.columns):
-                max_len = max(summary_df[col].astype(str).map(len).max(), len(col)) + 5
+                col_max = summary_df[col].astype(str).map(len).max()
+                max_len = max(col_max if pd.notna(col_max) else 0, len(col)) + 5
                 ws.set_column(i, i, max_len)
 
     return output.getvalue()

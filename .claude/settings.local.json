@@ -6,7 +6,8 @@
       "Bash(cd:*)",
       "Bash(xargs:*)",
       "Bash(pip install:*)",
-      "Bash(pip3 install:*)"
+      "Bash(pip3 install:*)",
+      "Bash(powershell.exe:*)"
     ]
   }
 }

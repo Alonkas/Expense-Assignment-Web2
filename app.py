@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import pandas as pd
 from utils import generate_excel, calculate_shared_split, write_to_google_sheets, load_category_rules, save_category_rules, load_categories, save_categories
@@ -96,7 +97,7 @@ else:
                 f"""
                 <div style="padding:10px; margin-bottom:8px; background-color:white;
                     border-left: 6px solid {color}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-weight:bold; font-size:0.9em; color:#555;">{p}</div>
+                    <div style="font-weight:bold; font-size:0.9em; color:#555;">{html.escape(p)}</div>
                     <div style="font-size:1.2em; font-weight:bold;">${amount:,.2f}</div>
                 </div>
                 """,
@@ -160,8 +161,8 @@ else:
             st.markdown(f"""
             <div style="text-align:center; padding:30px; border-radius:15px; background:white;
                 border:1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{row['Date']}</div>
-                <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{row['Description']}</div>
+                <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{html.escape(str(row['Date']))}</div>
+                <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{html.escape(str(row['Description']))}</div>
                 <div style="font-size:2.5em; font-weight:900; color:#333;">${row['Amount']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)

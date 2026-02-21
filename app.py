@@ -6,7 +6,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.6.1"
+APP_VERSION = "Ver.3.7.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:

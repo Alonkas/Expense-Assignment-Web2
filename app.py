@@ -7,7 +7,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.7.0"
+APP_VERSION = "Ver.3.8.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -102,7 +102,7 @@ else:
                 <div style="padding:10px; margin-bottom:8px; background-color:{card_bg};
                     border-left: 6px solid {color}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     <div style="font-weight:bold; font-size:0.9em; color:{card_text};">{html.escape(p)}</div>
-                    <div style="font-size:1.2em; font-weight:bold;">${amount:,.2f}</div>
+                    <div style="font-size:1.2em; font-weight:bold;">{amount:,.2f}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -111,7 +111,7 @@ else:
                 st.markdown(
                     f"""
                     <div style="font-size:0.75em; color:#808080; margin-top:-4px; margin-bottom:8px; padding-left:16px;">
-                        +${per_person_share:,.2f} from Shared
+                        +{per_person_share:,.2f} from Shared
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -167,7 +167,7 @@ else:
                 border:1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{html.escape(str(row['Date']))}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{html.escape(str(row['Description']))}</div>
-                <div style="font-size:2.5em; font-weight:900; color:{card_text};">${row['Amount']:.2f}</div>
+                <div style="font-size:2.5em; font-weight:900; color:{card_text};">{row['Amount']:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -258,7 +258,7 @@ else:
             column_config={
                 "Partner": st.column_config.SelectboxColumn(options=list(st.session_state.partners.keys()), required=True),
                 "Category": st.column_config.SelectboxColumn(options=st.session_state.categories, required=True),
-                "Amount": st.column_config.NumberColumn(format="$%.2f")
+                "Amount": st.column_config.NumberColumn(format="%.2f")
             },
             use_container_width=True,
             num_rows="dynamic",
@@ -272,6 +272,20 @@ else:
             edited['Verified'] = True
             st.session_state.expenses = edited
             st.rerun()
+
+        # --- ADD NEW CATEGORY ---
+        with st.expander("➕ Add New Category"):
+            new_cat = st.text_input("Category Name", key="table_new_cat")
+            if st.button("Add Category", key="table_add_cat_btn"):
+                if new_cat and new_cat.strip() and new_cat.strip() not in st.session_state.categories:
+                    st.session_state.categories.append(new_cat.strip())
+                    save_categories(st.session_state.categories)
+                    st.success(f"Category '{new_cat.strip()}' added.")
+                    st.rerun()
+                elif new_cat.strip() in st.session_state.categories:
+                    st.warning("That category already exists.")
+                else:
+                    st.warning("Please enter a category name.")
 
     # --- TAB 3: RESULTS ---
     with tab_results:
@@ -308,16 +322,16 @@ else:
                 for i, p in enumerate(real_partners):
                     color = st.session_state.partners.get(p, "#333")
                     with ind_cols[i]:
-                        st.metric(p, f"${breakdown['individual_totals'][p]:,.2f}")
+                        st.metric(p, f"{breakdown['individual_totals'][p]:,.2f}")
 
                 st.divider()
 
                 # --- Shared Total & Per-Person Share ---
                 s1, s2 = st.columns(2)
                 with s1:
-                    st.metric("Shared Total", f"${breakdown['shared_total']:,.2f}")
+                    st.metric("Shared Total", f"{breakdown['shared_total']:,.2f}")
                 with s2:
-                    st.metric(f"Per-Person Share (/{len(real_partners)})", f"${breakdown['per_person_share']:,.2f}")
+                    st.metric(f"Per-Person Share (/{len(real_partners)})", f"{breakdown['per_person_share']:,.2f}")
 
                 st.divider()
 
@@ -326,14 +340,14 @@ else:
                 grand_cols = st.columns(len(real_partners))
                 for i, p in enumerate(real_partners):
                     with grand_cols[i]:
-                        st.metric(p, f"${breakdown['grand_totals'][p]:,.2f}")
+                        st.metric(p, f"{breakdown['grand_totals'][p]:,.2f}")
             else:
                 # Original simple view
                 cols = st.columns(len(st.session_state.partners))
                 for i, (p, c) in enumerate(st.session_state.partners.items()):
                     p_df = res_df[res_df['Partner'] == p]
                     with cols[i]:
-                        st.metric(p, f"${p_df['Amount'].sum():,.2f}")
+                        st.metric(p, f"{p_df['Amount'].sum():,.2f}")
 
             st.divider()
 

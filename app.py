@@ -20,42 +20,28 @@ if 'categories' not in st.session_state:
     st.session_state.categories = load_categories()
 if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
-if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = False
 if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
 if 'verified_history' not in st.session_state:
     st.session_state.verified_history = []
 
-# --- DARK/LIGHT MODE TOGGLE ---
-_, right = st.columns([6, 1])
-with right:
-    dark = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, key="dark_toggle")
-    if dark != st.session_state.dark_mode:
-        st.session_state.dark_mode = dark
-        st.rerun()
-
-if st.session_state.dark_mode:
-    badge_bg = "rgba(30,30,30,0.8)"
-    card_bg = "#2d2d2d"
-    card_text = "#e0e0e0"
-    st.markdown("""
-        <style>
-        .stApp, [data-testid="stAppViewContainer"] { background-color: #1e1e1e; color: #e0e0e0; }
-        [data-testid="stSidebar"] { background-color: #2d2d2d; color: #e0e0e0; }
-        [data-testid="stHeader"] { background-color: #1e1e1e; }
-        .stTabs [data-baseweb="tab-panel"] { background-color: #1e1e1e; }
-        .stTabs [data-baseweb="tab-list"] { background-color: #2d2d2d; }
-        .stMarkdown, .stText, h1, h2, h3, h4, p, span, label, div { color: #e0e0e0 !important; }
-        [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #e0e0e0 !important; }
-        [data-testid="stMetricDelta"] { color: #aaa !important; }
-        .stDataFrame { background-color: #2d2d2d; }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    badge_bg = "rgba(255,255,255,0.8)"
-    card_bg = "white"
-    card_text = "#333"
+# --- ALWAYS DARK THEME ---
+badge_bg = "rgba(30,30,30,0.8)"
+card_bg = "#2d2d2d"
+card_text = "#e0e0e0"
+st.markdown("""
+    <style>
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #1e1e1e; color: #e0e0e0; }
+    [data-testid="stSidebar"] { background-color: #2d2d2d; color: #e0e0e0; }
+    [data-testid="stHeader"] { background-color: #1e1e1e; }
+    .stTabs [data-baseweb="tab-panel"] { background-color: #1e1e1e; }
+    .stTabs [data-baseweb="tab-list"] { background-color: #2d2d2d; }
+    .stMarkdown, .stText, h1, h2, h3, h4, p, span, label, div { color: #e0e0e0 !important; }
+    [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #e0e0e0 !important; }
+    [data-testid="stMetricDelta"] { color: #aaa !important; }
+    .stDataFrame { background-color: #2d2d2d; }
+    </style>
+""", unsafe_allow_html=True)
 
 # Version badge
 st.markdown(

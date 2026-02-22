@@ -1,13 +1,14 @@
 import html
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from utils import generate_excel, calculate_shared_split, write_to_google_sheets, load_category_rules, save_category_rules, load_categories, save_categories
 from setup_page import render_setup_page
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.3.8.0"
+APP_VERSION = "Ver.4.0.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -20,42 +21,28 @@ if 'categories' not in st.session_state:
     st.session_state.categories = load_categories()
 if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
-if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = False
 if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
 if 'verified_history' not in st.session_state:
     st.session_state.verified_history = []
 
-# --- DARK/LIGHT MODE TOGGLE ---
-_, right = st.columns([6, 1])
-with right:
-    dark = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode, key="dark_toggle")
-    if dark != st.session_state.dark_mode:
-        st.session_state.dark_mode = dark
-        st.rerun()
-
-if st.session_state.dark_mode:
-    badge_bg = "rgba(30,30,30,0.8)"
-    card_bg = "#2d2d2d"
-    card_text = "#e0e0e0"
-    st.markdown("""
-        <style>
-        .stApp, [data-testid="stAppViewContainer"] { background-color: #1e1e1e; color: #e0e0e0; }
-        [data-testid="stSidebar"] { background-color: #2d2d2d; color: #e0e0e0; }
-        [data-testid="stHeader"] { background-color: #1e1e1e; }
-        .stTabs [data-baseweb="tab-panel"] { background-color: #1e1e1e; }
-        .stTabs [data-baseweb="tab-list"] { background-color: #2d2d2d; }
-        .stMarkdown, .stText, h1, h2, h3, h4, p, span, label, div { color: #e0e0e0 !important; }
-        [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #e0e0e0 !important; }
-        [data-testid="stMetricDelta"] { color: #aaa !important; }
-        .stDataFrame { background-color: #2d2d2d; }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    badge_bg = "rgba(255,255,255,0.8)"
-    card_bg = "white"
-    card_text = "#333"
+# --- ALWAYS DARK THEME ---
+badge_bg = "rgba(30,30,30,0.8)"
+card_bg = "#2d2d2d"
+card_text = "#e0e0e0"
+st.markdown("""
+    <style>
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #1e1e1e; color: #e0e0e0; }
+    [data-testid="stSidebar"] { background-color: #2d2d2d; color: #e0e0e0; }
+    [data-testid="stHeader"] { background-color: #1e1e1e; }
+    .stTabs [data-baseweb="tab-panel"] { background-color: #1e1e1e; }
+    .stTabs [data-baseweb="tab-list"] { background-color: #2d2d2d; }
+    .stMarkdown, .stText, h1, h2, h3, h4, p, span, label, div { color: #e0e0e0 !important; }
+    [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #e0e0e0 !important; }
+    [data-testid="stMetricDelta"] { color: #aaa !important; }
+    .stDataFrame { background-color: #2d2d2d; }
+    </style>
+""", unsafe_allow_html=True)
 
 # Version badge
 st.markdown(
@@ -68,6 +55,25 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# ==========================================
+# HELPERS
+# ==========================================
+
+def _apply_view(df: pd.DataFrame, view: str) -> pd.DataFrame:
+    if view == "Sum by category":
+        return (
+            df.groupby("Category", as_index=False)["Amount"]
+            .sum()
+            .sort_values("Amount", ascending=False)
+            .rename(columns={"Amount": "Total"})
+        )
+    elif view == "By date (newest first)":
+        return df.sort_values("Date", ascending=False).drop(columns=["Verified"], errors="ignore")
+    elif view == "Most → least expensive":
+        return df.sort_values("Amount", ascending=False).drop(columns=["Verified"], errors="ignore")
+    else:  # Raw table (default)
+        return df.drop(columns=["Verified"], errors="ignore")
 
 # ==========================================
 # FLOW CONTROL
@@ -127,7 +133,10 @@ else:
 
     st.title("Expense Dashboard")
 
-    tab_focus, tab_table, tab_results, tab_rules = st.tabs(["🎯 Focus Mode (Verification)", "📊 Table View", "🏁 Final Results", "🏷️ Category Rules"])
+    tab_focus, tab_table, tab_results, tab_rules, tab_analytics = st.tabs([
+        "🎯 Focus Mode (Verification)", "📊 Table View",
+        "🏁 Final Results", "🏷️ Category Rules", "📈 Analytics"
+    ])
 
     # --- TAB 1: FOCUS MODE ---
     with tab_focus:
@@ -256,8 +265,8 @@ else:
         edited = st.data_editor(
             view_df,
             column_config={
-                "Partner": st.column_config.SelectboxColumn(options=list(st.session_state.partners.keys()), required=True),
-                "Category": st.column_config.SelectboxColumn(options=st.session_state.categories, required=True),
+                "Partner": st.column_config.SelectboxColumn(options=list(st.session_state.partners.keys())),
+                "Category": st.column_config.SelectboxColumn(options=st.session_state.categories),
                 "Amount": st.column_config.NumberColumn(format="%.2f")
             },
             use_container_width=True,
@@ -266,11 +275,17 @@ else:
         )
 
         if not edited.equals(view_df):
-            # If edited in table, we assume it's verified
-            # We need to merge the edits back into the main DF which has the 'Verified' col
-            # Reconstruct the DF
-            edited['Verified'] = True
-            st.session_state.expenses = edited
+            new_expenses = edited.copy()
+            # Preserve existing Verified status; new rows default to False
+            new_expenses['Verified'] = (
+                st.session_state.expenses['Verified']
+                .reindex(edited.index, fill_value=False)
+                .values
+            )
+            # Only mark rows where the user actually changed a cell as Verified
+            changed = ~edited.eq(view_df.reindex(edited.index)).all(axis=1)
+            new_expenses.loc[changed, 'Verified'] = True
+            st.session_state.expenses = new_expenses.reset_index(drop=True)
             st.rerun()
 
         # --- ADD NEW CATEGORY ---
@@ -389,3 +404,82 @@ else:
                 st.rerun()
         else:
             st.info("No rules yet. Rules are learned automatically as you verify expenses.")
+
+    # --- TAB 5: ANALYTICS ---
+    with tab_analytics:
+        df = st.session_state.expenses
+        partners = st.session_state.partners
+        has_shared = st.session_state.has_shared_partner
+
+        if df.empty:
+            st.info("No expenses loaded yet.")
+        else:
+            real_partners = [p for p in partners if p != "Shared"]
+            all_tab_partners = real_partners + (["Shared"] if has_shared else [])
+            tab_labels = [f"👤 {p}" for p in real_partners] + (["⚖️ Shared"] if has_shared else [])
+
+            partner_tabs = st.tabs(tab_labels)
+
+            for tab, partner in zip(partner_tabs, all_tab_partners):
+                with tab:
+                    color = partners.get(partner, "#888")
+                    own_df = df[df['Partner'] == partner].copy()
+                    # Shared section: only shown inside real partner tabs
+                    shared_df = (
+                        df[df['Partner'] == "Shared"].copy()
+                        if has_shared and partner != "Shared"
+                        else pd.DataFrame()
+                    )
+
+                    # View selector
+                    view = st.selectbox(
+                        "View",
+                        ["Raw table", "Sum by category", "By date (newest first)", "Most → least expensive", "Pie by category"],
+                        key=f"analytics_view_{partner}"
+                    )
+
+                    # Total metric
+                    total = own_df['Amount'].sum()
+                    st.markdown(
+                        f'<div style="font-size:1.4em; font-weight:800; color:{color}; margin-bottom:12px;">'
+                        f'Total: {total:,.2f}</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    # Own expenses
+                    st.markdown(f"**{html.escape(partner)}'s expenses**")
+                    if own_df.empty:
+                        st.caption("No expenses.")
+                    else:
+                        if view == "Pie by category":
+                            cat_sums = own_df.groupby("Category", as_index=False)["Amount"].sum()
+                            fig = px.pie(cat_sums, names="Category", values="Amount",
+                                         title=f"{partner}'s expenses by category",
+                                         template="plotly_dark")
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.dataframe(_apply_view(own_df, view), use_container_width=True, hide_index=True)
+                            st.markdown(
+                                f'<div style="text-align:right; color:{color}; font-weight:700; margin-top:4px;">'
+                                f'Sum: {own_df["Amount"].sum():,.2f}</div>',
+                                unsafe_allow_html=True
+                            )
+
+                    # Shared expenses (real partners only)
+                    if not shared_df.empty:
+                        st.markdown("---")
+                        st.markdown("**Shared expenses** *(full amounts)*")
+                        if view == "Pie by category":
+                            cat_sums = shared_df.groupby("Category", as_index=False)["Amount"].sum()
+                            fig = px.pie(cat_sums, names="Category", values="Amount",
+                                         title="Shared expenses by category",
+                                         template="plotly_dark")
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.dataframe(_apply_view(shared_df, view), use_container_width=True, hide_index=True)
+                            shared_total = shared_df["Amount"].sum()
+                            st.markdown(
+                                f'<div style="text-align:right; color:#aaa; font-weight:700; margin-top:4px;">'
+                                f'Sum: {shared_total:,.2f}</div>',
+                                unsafe_allow_html=True
+                            )

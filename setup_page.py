@@ -9,7 +9,7 @@ def render_setup_page():
     if not st.session_state.partners:
         st.subheader("1. Define Partners")
         with st.container(border=True):
-            num_partners = st.slider("How many roommates?", min_value=2, max_value=7, value=3)
+            num_partners = st.slider("How many roommates?", min_value=1, max_value=7, value=2)
             
             # Temporary dictionary to hold inputs
             current_partners = {} 

@@ -265,8 +265,8 @@ else:
         edited = st.data_editor(
             view_df,
             column_config={
-                "Partner": st.column_config.SelectboxColumn(options=list(st.session_state.partners.keys()), required=True),
-                "Category": st.column_config.SelectboxColumn(options=st.session_state.categories, required=True),
+                "Partner": st.column_config.SelectboxColumn(options=list(st.session_state.partners.keys())),
+                "Category": st.column_config.SelectboxColumn(options=st.session_state.categories),
                 "Amount": st.column_config.NumberColumn(format="%.2f")
             },
             use_container_width=True,
@@ -275,11 +275,17 @@ else:
         )
 
         if not edited.equals(view_df):
-            # If edited in table, we assume it's verified
-            # We need to merge the edits back into the main DF which has the 'Verified' col
-            # Reconstruct the DF
-            edited['Verified'] = True
-            st.session_state.expenses = edited
+            new_expenses = edited.copy()
+            # Preserve existing Verified status; new rows default to False
+            new_expenses['Verified'] = (
+                st.session_state.expenses['Verified']
+                .reindex(edited.index, fill_value=False)
+                .values
+            )
+            # Only mark rows where the user actually changed a cell as Verified
+            changed = ~edited.eq(view_df.reindex(edited.index)).all(axis=1)
+            new_expenses.loc[changed, 'Verified'] = True
+            st.session_state.expenses = new_expenses.reset_index(drop=True)
             st.rerun()
 
         # --- ADD NEW CATEGORY ---

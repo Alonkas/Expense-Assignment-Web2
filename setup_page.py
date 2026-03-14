@@ -18,14 +18,17 @@ def render_setup_page():
             default_colors = ["#FF4B4B", "#1E90FF", "#228B22", "#FFA500", "#9370DB", "#008080", "#FF1493"]
             default_names = ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace"]
 
+            # --- Shared Partner Toggle (before partner loop so toggles can react) ---
+            enable_shared = st.toggle("Enable a 'Shared' partner for joint expenses?", key="shared_toggle")
+
+            shares_shared = {}
             for i in range(num_partners):
-                with cols[i % 3]: 
+                with cols[i % 3]:
                     p_name = st.text_input(f"Name {i+1}", value=default_names[i], key=f"p_name_{i}")
                     p_color = st.color_picker(f"Color {i+1}", default_colors[i], key=f"p_col_{i}")
                     current_partners[p_name] = p_color
-            
-            # --- Shared Partner Toggle ---
-            enable_shared = st.toggle("Enable a 'Shared' partner for joint expenses?", key="shared_toggle")
+                    if enable_shared:
+                        shares_shared[p_name] = st.toggle("Shares Shared?", value=True, key=f"p_shares_{i}")
 
             # Button to save partners so we don't lose them when adding files
             if st.button("Confirm Partners"):
@@ -33,8 +36,10 @@ def render_setup_page():
                 if enable_shared:
                     st.session_state.partners["Shared"] = "#808080"
                     st.session_state.has_shared_partner = True
+                    st.session_state.shares_shared = shares_shared
                 else:
                     st.session_state.has_shared_partner = False
+                    st.session_state.shares_shared = {}
                 st.rerun()
     else:
         # If partners are set, show a small summary and a "Edit" button
@@ -44,6 +49,7 @@ def render_setup_page():
         if st.button("✏️ Edit Partners"):
             st.session_state.partners = {} # Reset to allow editing
             st.session_state.has_shared_partner = False
+            st.session_state.shares_shared = {}
             st.rerun()
 
     st.divider()
@@ -66,19 +72,14 @@ def render_setup_page():
                 preview_df = pd.read_excel(uploaded_file, nrows=0)
                 columns = preview_df.columns.tolist()
                 
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("**Required**")
-                    date_col = st.selectbox("Date", columns, index=0 if len(columns)>0 else 0)
-                    desc_col = st.selectbox("Description", columns, index=1 if len(columns)>1 else 0)
-                    amt_col = st.selectbox("Amount", columns, index=2 if len(columns)>2 else 0)
-                
-                with c2:
-                    st.markdown("**Optional (Pre-filled)**")
-                    opt_cols = ["None"] + columns
-                    partner_col = st.selectbox("Partner", opt_cols)
-                    cat_col = st.selectbox("Category", opt_cols)
-                    comment_col = st.selectbox("Comment", opt_cols)
+                opt_cols = ["None"] + columns
+                source_col = st.selectbox("Source (Credit Card)", opt_cols, help="Optional — which credit card or account")
+                date_col = st.selectbox("Date", columns, index=0 if len(columns)>0 else 0)
+                desc_col = st.selectbox("Description", columns, index=1 if len(columns)>1 else 0)
+                amt_col = st.selectbox("Amount", columns, index=2 if len(columns)>2 else 0)
+                partner_col = st.selectbox("Partner", opt_cols)
+                cat_col = st.selectbox("Category", opt_cols)
+                comment_col = st.selectbox("Comment", opt_cols)
 
                 st.markdown("---")
                 
@@ -86,7 +87,7 @@ def render_setup_page():
                 if st.button("➕ Add This File to Batch", type="primary"):
                     mapping = {
                         'date': date_col, 'desc': desc_col, 'amt': amt_col,
-                        'partner': partner_col, 'cat': cat_col, 'comment': comment_col
+                        'source': source_col, 'partner': partner_col, 'cat': cat_col, 'comment': comment_col
                     }
                     new_data = load_excel(uploaded_file, mapping)
                     

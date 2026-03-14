@@ -263,7 +263,7 @@ else:
 
     # --- TAB 2: TABLE VIEW ---
     with tab_table:
-        st.info("📝 Advanced Mode: Edits here are auto-saved.")
+        st.info("📝 Advanced Mode: Make your edits, then click Save.")
 
         # Hide Verified column from editor but keep it for logic
         view_df = st.session_state.expenses.drop(columns=['Verified'])
@@ -280,19 +280,24 @@ else:
             height=500
         )
 
-        if not edited.equals(view_df):
-            new_expenses = edited.copy()
-            # Preserve existing Verified status; new rows default to False
-            new_expenses['Verified'] = (
-                st.session_state.expenses['Verified']
-                .reindex(edited.index, fill_value=False)
-                .values
-            )
-            # Only mark rows where the user actually changed a cell as Verified
-            changed = ~edited.eq(view_df.reindex(edited.index)).all(axis=1)
-            new_expenses.loc[changed, 'Verified'] = True
-            st.session_state.expenses = new_expenses.reset_index(drop=True)
-            st.rerun()
+        if st.button("💾 Save Changes", key="table_save_btn"):
+            if not edited.equals(view_df):
+                new_expenses = edited.copy()
+                # Preserve existing Verified status; new rows default to False
+                new_expenses['Verified'] = (
+                    st.session_state.expenses['Verified']
+                    .reindex(edited.index, fill_value=False)
+                    .values
+                )
+                st.session_state.expenses = new_expenses.reset_index(drop=True)
+                # Clear Go Back history since indices shifted
+                st.session_state.verified_history = []
+                # Clear cached Focus Mode widget state so edits appear
+                for k in [k for k in st.session_state if k.startswith(('cat_', 'com_'))]:
+                    del st.session_state[k]
+                st.rerun()
+            else:
+                st.info("No changes to save.")
 
         # --- ADD NEW CATEGORY ---
         with st.expander("➕ Add New Category"):

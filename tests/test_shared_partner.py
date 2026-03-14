@@ -207,13 +207,22 @@ class TestStreamlitIntegration:
     def test_shared_toggle_adds_shared_partner(self):
         """Enabling shared toggle and confirming adds 'Shared' to partners."""
         at = self.AppTest.from_file("setup_page_harness.py", default_timeout=10)
+        at.session_state._test_jump_to_partners = True
         at.run()
 
-        # Enable shared toggle
-        at.toggle(key="shared_toggle").set_value(True).run()
+        # Enable shared toggle (manual partner mode key)
+        at.toggle(key="wiz_shared_toggle_manual").set_value(True).run()
 
         # Click Confirm Partners
-        at.button[0].click().run()
+        at.button(key="back_to_2")  # Back button exists
+        # Find and click the Confirm Partners button
+        for btn in at.button:
+            if "Confirm" in str(getattr(btn, 'label', '')):
+                btn.click().run()
+                break
+        else:
+            # Fallback: last button should be Confirm Partners
+            at.button[-1].click().run()
 
         assert 'Shared' in at.session_state.partners
         assert at.session_state.partners['Shared'] == '#808080'
@@ -222,10 +231,11 @@ class TestStreamlitIntegration:
     def test_shared_toggle_off_no_shared_partner(self):
         """Disabling shared toggle means no Shared partner."""
         at = self.AppTest.from_file("setup_page_harness.py", default_timeout=10)
+        at.session_state._test_jump_to_partners = True
         at.run()
 
-        # Leave toggle off (default), click Confirm
-        at.button[0].click().run()
+        # Leave toggle off (default), click Confirm Partners (last button)
+        at.button[-1].click().run()
 
         assert 'Shared' not in at.session_state.partners
         assert at.session_state.has_shared_partner is False
@@ -274,6 +284,63 @@ class TestCategoryRulesMatching:
         rules = {"shell gas station": "Fuel & Auto"}
         assert self.match(rules, "shell gas station highway 101") is None
         assert self.match(rules, "shell gas") is None
+
+
+# =============================================
+# Existing category not overridden tests
+# =============================================
+
+class TestExistingCategoryNotOverridden:
+    """Tests that auto-categorization does NOT override a real existing category."""
+
+    @staticmethod
+    def auto_categorize(rules, description, existing_category):
+        """Replicate the has_category + rule-lookup logic from app.py:204-213."""
+        desc_lower = str(description).strip().lower()
+        existing_cat = existing_category
+        has_category = pd.notna(existing_cat) and str(existing_cat).strip() and existing_cat != "Uncategorized"
+
+        if has_category:
+            matched_category = None
+        else:
+            matched_category = rules.get(desc_lower)
+        return matched_category
+
+    def test_existing_category_preserved(self):
+        """When a row already has a real category, the rule should NOT fire."""
+        rules = {"grocery store": "Groceries"}
+        result = self.auto_categorize(rules, "grocery store", "Dining Out")
+        assert result is None  # rule skipped, existing category kept
+
+    def test_uncategorized_gets_rule(self):
+        """When a row has 'Uncategorized', the rule SHOULD fire."""
+        rules = {"grocery store": "Groceries"}
+        result = self.auto_categorize(rules, "grocery store", "Uncategorized")
+        assert result == "Groceries"
+
+    def test_empty_string_gets_rule(self):
+        """When a row has an empty-string category, the rule SHOULD fire."""
+        rules = {"grocery store": "Groceries"}
+        result = self.auto_categorize(rules, "grocery store", "")
+        assert result == "Groceries"
+
+    def test_nan_gets_rule(self):
+        """When a row has NaN category, the rule SHOULD fire (pd.notna guard)."""
+        rules = {"grocery store": "Groceries"}
+        result = self.auto_categorize(rules, "grocery store", float('nan'))
+        assert result == "Groceries"
+
+    def test_none_gets_rule(self):
+        """When a row has None category, the rule SHOULD fire."""
+        rules = {"grocery store": "Groceries"}
+        result = self.auto_categorize(rules, "grocery store", None)
+        assert result == "Groceries"
+
+    def test_no_rule_match_with_uncategorized(self):
+        """When no rule matches and category is Uncategorized, returns None."""
+        rules = {"grocery store": "Groceries"}
+        result = self.auto_categorize(rules, "gas station", "Uncategorized")
+        assert result is None
 
 
 # =============================================

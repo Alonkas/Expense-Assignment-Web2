@@ -4,20 +4,49 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 
-def load_excel(file, mapping):
-    try:
-        df = pd.read_excel(file)
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
-        return None
+COLUMN_KEYWORDS = {
+    'date': ['date', 'תאריך', 'תאריך עסקה'],
+    'desc': ['description', 'desc', 'תיאור', 'פירוט', 'שם בית העסק'],
+    'amt': ['amount', 'sum', 'סכום', 'סכום חיוב'],
+    'source': ['source', 'credit card', 'כרטיס', 'מקור'],
+    'partner': ['partner', 'roommate', 'שותף', 'שם'],
+    'cat': ['category', 'cat', 'קטגוריה'],
+    'comment': ['comment', 'note', 'notes', 'הערה', 'הערות'],
+}
+SHARED_KEYWORDS = ['shared', 'משותף', 'common']
 
-    # Rename columns
+
+def auto_detect_columns(df):
+    """Match DataFrame column headers to known field names via keyword lookup."""
+    mapping = {}
+    used = set()
+    for field, keywords in COLUMN_KEYWORDS.items():
+        for col in df.columns:
+            if col in used:
+                continue
+            col_lower = str(col).strip().lower()
+            if any(kw in col_lower for kw in keywords):
+                mapping[field] = col
+                used.add(col)
+                break
+    # Required fields → None if unmatched; optional → "None" string
+    for field in ['date', 'desc', 'amt']:
+        mapping.setdefault(field, None)
+    for field in ['source', 'partner', 'cat', 'comment']:
+        mapping.setdefault(field, "None")
+    return mapping
+
+
+def apply_mapping(df, mapping):
+    """Apply column mapping, rename, normalize, and clean a DataFrame."""
     rename_dict = {
         mapping['date']: 'Date',
         mapping['desc']: 'Description',
         mapping['amt']: 'Amount'
     }
-    
+
+    if mapping.get('source') and mapping['source'] != "None":
+        rename_dict[mapping['source']] = 'Source'
     if mapping.get('partner') and mapping['partner'] != "None":
         rename_dict[mapping['partner']] = 'Partner'
     if mapping.get('cat') and mapping['cat'] != "None":
@@ -26,9 +55,9 @@ def load_excel(file, mapping):
         rename_dict[mapping['comment']] = 'Comment'
 
     df = df.rename(columns=rename_dict)
-    
+
     # Normalize Columns
-    expected_cols = ['Date', 'Description', 'Amount', 'Partner', 'Category', 'Comment']
+    expected_cols = ['Source', 'Date', 'Description', 'Amount', 'Partner', 'Category', 'Comment']
     for col in expected_cols:
         if col not in df.columns:
             df[col] = None
@@ -39,7 +68,8 @@ def load_excel(file, mapping):
     df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0.0)
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce').dt.date
     df = df.dropna(subset=['Date'])
-    
+
+    df['Source'] = df['Source'].fillna("")
     df['Partner'] = df['Partner'].replace(["", " ", "nan"], None)
     df['Category'] = df['Category'].fillna("Uncategorized")
     df['Comment'] = df['Comment'].fillna("")
@@ -47,6 +77,16 @@ def load_excel(file, mapping):
     df['Verified'] = False
 
     return df
+
+
+def load_excel(file, mapping):
+    try:
+        df = pd.read_excel(file)
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        return None
+
+    return apply_mapping(df, mapping)
 
 def extract_categories(df):
     """Extracts unique categories from the loaded dataframe."""
@@ -149,17 +189,21 @@ def save_category_rules(rules):
         st.warning(f"⚠️ Could not save category rules to Google Sheets: {e}")
 
 
-def calculate_shared_split(df, partners, has_shared_partner):
+def calculate_shared_split(df, partners, has_shared_partner, shares_shared=None):
     """Calculate per-person breakdown including shared expense splitting.
 
     Returns a dict with:
         individual_totals: {name: amount} for each real partner's own expenses
         shared_total: total of all Shared expenses
-        per_person_share: shared_total / number of real partners
-        grand_totals: {name: individual + per_person_share}
+        per_person_share: shared_total / number of sharing partners
+        grand_totals: {name: individual + per_person_share (if sharing)}
         real_partners: list of partner names excluding "Shared"
+        sharing_partners: list of partners who participate in shared split
     """
+    if shares_shared is None:
+        shares_shared = {}
     real_partners = [p for p in partners if p != "Shared"]
+    sharing_partners = [p for p in real_partners if shares_shared.get(p, True)]
 
     if not has_shared_partner or "Shared" not in partners:
         # No shared partner — simple totals
@@ -172,6 +216,7 @@ def calculate_shared_split(df, partners, has_shared_partner):
             'per_person_share': 0.0,
             'grand_totals': dict(individual_totals),
             'real_partners': real_partners,
+            'sharing_partners': sharing_partners,
         }
 
     individual_totals = {}
@@ -179,11 +224,14 @@ def calculate_shared_split(df, partners, has_shared_partner):
         individual_totals[p] = df.loc[df['Partner'] == p, 'Amount'].sum()
 
     shared_total = df.loc[df['Partner'] == 'Shared', 'Amount'].sum()
-    per_person_share = shared_total / len(real_partners) if real_partners else 0.0
+    per_person_share = shared_total / len(sharing_partners) if sharing_partners else 0.0
 
     grand_totals = {}
     for p in real_partners:
-        grand_totals[p] = individual_totals[p] + per_person_share
+        if p in sharing_partners:
+            grand_totals[p] = individual_totals[p] + per_person_share
+        else:
+            grand_totals[p] = individual_totals[p]
 
     return {
         'individual_totals': individual_totals,
@@ -191,9 +239,10 @@ def calculate_shared_split(df, partners, has_shared_partner):
         'per_person_share': per_person_share,
         'grand_totals': grand_totals,
         'real_partners': real_partners,
+        'sharing_partners': sharing_partners,
     }
 
-def write_to_google_sheets(df, partners, has_shared_partner):
+def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None):
     """Write expense data to an existing Google Sheet and return its URL."""
     spreadsheet = _get_spreadsheet()
 
@@ -221,13 +270,14 @@ def write_to_google_sheets(df, partners, has_shared_partner):
     ws2.clear()
 
     if has_shared_partner:
-        breakdown = calculate_shared_split(df, partners, has_shared_partner)
+        breakdown = calculate_shared_split(df, partners, has_shared_partner, shares_shared)
         rows = [["Partner", "Own Total", "Share of Shared", "Grand Total"]]
         for p in breakdown["real_partners"]:
+            share_val = breakdown["per_person_share"] if p in breakdown["sharing_partners"] else 0.0
             rows.append([
                 p,
                 round(breakdown["individual_totals"][p], 2),
-                round(breakdown["per_person_share"], 2),
+                round(share_val, 2),
                 round(breakdown["grand_totals"][p], 2),
             ])
         rows.append([
@@ -247,7 +297,7 @@ def write_to_google_sheets(df, partners, has_shared_partner):
     return spreadsheet.url
 
 
-def generate_excel(df, partners=None, has_shared_partner=False):
+def generate_excel(df, partners=None, has_shared_partner=False, shares_shared=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         export_df = df.drop(columns=['Verified'], errors='ignore')
@@ -262,14 +312,15 @@ def generate_excel(df, partners=None, has_shared_partner=False):
 
         # Summary sheet when shared partner is enabled
         if has_shared_partner and partners:
-            breakdown = calculate_shared_split(df, partners, has_shared_partner)
+            breakdown = calculate_shared_split(df, partners, has_shared_partner, shares_shared)
 
             summary_rows = []
             for p in breakdown['real_partners']:
+                share_val = breakdown['per_person_share'] if p in breakdown['sharing_partners'] else 0.0
                 summary_rows.append({
                     'Partner': p,
                     'Own Total': breakdown['individual_totals'][p],
-                    'Share of Shared': breakdown['per_person_share'],
+                    'Share of Shared': share_val,
                     'Grand Total': breakdown['grand_totals'][p],
                 })
             summary_rows.append({

@@ -8,7 +8,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.4.0.0"
+APP_VERSION = "Ver.4.2.1"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -21,6 +21,14 @@ if 'categories' not in st.session_state:
     st.session_state.categories = load_categories()
 if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
+if 'shares_shared' not in st.session_state:
+    st.session_state.shares_shared = {}
+if 'setup_step' not in st.session_state:
+    st.session_state.setup_step = 1
+if 'raw_df' not in st.session_state:
+    st.session_state.raw_df = None
+if 'detected_mapping' not in st.session_state:
+    st.session_state.detected_mapping = None
 if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
 if 'verified_history' not in st.session_state:
@@ -88,6 +96,7 @@ else:
         # BUTTON TO ADD MORE FILES WITHOUT LOSING DATA
         if st.button("📂 Add More Files"):
             st.session_state.setup_complete = False
+            st.session_state.setup_step = 1
             st.rerun()
 
         st.divider()
@@ -96,10 +105,12 @@ else:
         current_totals = st.session_state.expenses.groupby("Partner")['Amount'].sum()
 
         has_shared = st.session_state.has_shared_partner
+        shares_shared = st.session_state.shares_shared
         if has_shared:
             shared_total = current_totals.get("Shared", 0.0)
-            num_real_partners = len(st.session_state.partners) - 1
-            per_person_share = shared_total / num_real_partners if num_real_partners > 0 else 0.0
+            sharing_partners = [p for p in st.session_state.partners if p != "Shared" and shares_shared.get(p, True)]
+            num_sharing = len(sharing_partners)
+            per_person_share = shared_total / num_sharing if num_sharing > 0 else 0.0
 
         for p, color in st.session_state.partners.items():
             amount = current_totals.get(p, 0.0)
@@ -113,7 +124,7 @@ else:
                 """,
                 unsafe_allow_html=True
             )
-            if has_shared and p != "Shared":
+            if has_shared and p != "Shared" and shares_shared.get(p, True):
                 st.markdown(
                     f"""
                     <div style="font-size:0.75em; color:#808080; margin-top:-4px; margin-bottom:8px; padding-left:16px;">
@@ -129,6 +140,10 @@ else:
             st.session_state.expenses = pd.DataFrame()
             st.session_state.partners = {}
             st.session_state.has_shared_partner = False
+            st.session_state.shares_shared = {}
+            st.session_state.setup_step = 1
+            st.session_state.raw_df = None
+            st.session_state.detected_mapping = None
             st.rerun()
 
     st.title("Expense Dashboard")
@@ -174,6 +189,7 @@ else:
             st.markdown(f"""
             <div style="text-align:center; padding:30px; border-radius:15px; background:{card_bg};
                 border:1px solid #e0e0e0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                {"<div style='display:inline-block; background:#444; color:#ccc; font-size:0.75em; padding:2px 8px; border-radius:8px; margin-bottom:6px;'>" + html.escape(str(row['Source'])) + "</div>" if row.get('Source') else ""}
                 <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{html.escape(str(row['Date']))}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{html.escape(str(row['Description']))}</div>
                 <div style="font-size:2.5em; font-weight:900; color:{card_text};">{row['Amount']:.2f}</div>
@@ -187,7 +203,13 @@ else:
 
             # --- AUTO-CATEGORIZATION MATCHING (exact match on full description) ---
             desc_lower = str(row['Description']).strip().lower()
-            matched_category = st.session_state.category_rules.get(desc_lower)
+            existing_cat = row['Category']
+            has_category = pd.notna(existing_cat) and str(existing_cat).strip() and existing_cat != "Uncategorized"
+
+            if has_category:
+                matched_category = None  # respect existing category from Excel/Table View
+            else:
+                matched_category = st.session_state.category_rules.get(desc_lower)
 
             if matched_category:
                 st.info(f"🏷️ Auto-category match: **{matched_category}** (change below if needed)")
@@ -257,7 +279,7 @@ else:
 
     # --- TAB 2: TABLE VIEW ---
     with tab_table:
-        st.info("📝 Advanced Mode: Edits here are auto-saved.")
+        st.info("📝 Advanced Mode: Make your edits, then click Save.")
 
         # Hide Verified column from editor but keep it for logic
         view_df = st.session_state.expenses.drop(columns=['Verified'])
@@ -274,19 +296,24 @@ else:
             height=500
         )
 
-        if not edited.equals(view_df):
-            new_expenses = edited.copy()
-            # Preserve existing Verified status; new rows default to False
-            new_expenses['Verified'] = (
-                st.session_state.expenses['Verified']
-                .reindex(edited.index, fill_value=False)
-                .values
-            )
-            # Only mark rows where the user actually changed a cell as Verified
-            changed = ~edited.eq(view_df.reindex(edited.index)).all(axis=1)
-            new_expenses.loc[changed, 'Verified'] = True
-            st.session_state.expenses = new_expenses.reset_index(drop=True)
-            st.rerun()
+        if st.button("💾 Save Changes", key="table_save_btn"):
+            if not edited.equals(view_df):
+                new_expenses = edited.copy()
+                # Preserve existing Verified status; new rows default to False
+                new_expenses['Verified'] = (
+                    st.session_state.expenses['Verified']
+                    .reindex(edited.index, fill_value=False)
+                    .values
+                )
+                st.session_state.expenses = new_expenses.reset_index(drop=True)
+                # Clear Go Back history since indices shifted
+                st.session_state.verified_history = []
+                # Clear cached Focus Mode widget state so edits appear
+                for k in [k for k in st.session_state if k.startswith(('cat_', 'com_'))]:
+                    del st.session_state[k]
+                st.rerun()
+            else:
+                st.info("No changes to save.")
 
         # --- ADD NEW CATEGORY ---
         with st.expander("➕ Add New Category"):
@@ -311,15 +338,17 @@ else:
         if res_df.empty:
             st.warning("No data.")
         else:
+            shares_shared = st.session_state.shares_shared
+
             st.download_button("📥 Download Combined Report",
-                             data=generate_excel(res_df, st.session_state.partners, has_shared),
+                             data=generate_excel(res_df, st.session_state.partners, has_shared, shares_shared),
                              file_name="Report.xlsx",
                              type="primary")
 
             if st.button("📤 Write to Google Sheets", type="secondary"):
                 with st.spinner("Writing to Google Sheets..."):
                     try:
-                        url = write_to_google_sheets(res_df, st.session_state.partners, has_shared)
+                        url = write_to_google_sheets(res_df, st.session_state.partners, has_shared, shares_shared)
                         st.success("Written to Google Sheets!")
                         st.markdown(f"[Open Google Sheet]({url})")
                     except Exception as e:
@@ -328,8 +357,9 @@ else:
             st.divider()
 
             if has_shared:
-                breakdown = calculate_shared_split(res_df, st.session_state.partners, has_shared)
+                breakdown = calculate_shared_split(res_df, st.session_state.partners, has_shared, shares_shared)
                 real_partners = breakdown['real_partners']
+                sharing_partners = breakdown['sharing_partners']
 
                 # --- Individual Totals ---
                 st.subheader("Individual Totals (own expenses only)")
@@ -346,7 +376,7 @@ else:
                 with s1:
                     st.metric("Shared Total", f"{breakdown['shared_total']:,.2f}")
                 with s2:
-                    st.metric(f"Per-Person Share (/{len(real_partners)})", f"{breakdown['per_person_share']:,.2f}")
+                    st.metric(f"Per-Person Share (/{len(sharing_partners)})", f"{breakdown['per_person_share']:,.2f}")
 
                 st.divider()
 

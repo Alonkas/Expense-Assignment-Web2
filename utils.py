@@ -294,6 +294,35 @@ def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None)
 
     ws2.update(rows, value_input_option="USER_ENTERED")
 
+    # --- Per-partner worksheets ---
+    if partners:
+        amount_col = export_df.columns.tolist().index("Amount") if "Amount" in export_df.columns else None
+        for name in partners:
+            partner_df = export_df[export_df["Partner"] == name].reset_index(drop=True)
+            sheet_name = name[:100]  # Google Sheets allows up to 100 chars
+            try:
+                ws_p = spreadsheet.worksheet(sheet_name)
+            except gspread.exceptions.WorksheetNotFound:
+                ws_p = spreadsheet.add_worksheet(sheet_name, rows=1, cols=1)
+            ws_p.clear()
+
+            data_rows = [partner_df.columns.tolist()] + partner_df.values.tolist()
+            # Add bold Total row
+            total_row = [""] * len(partner_df.columns)
+            total_row[0] = "Total"
+            if amount_col is not None and len(partner_df) > 0:
+                total_row[amount_col] = round(partner_df["Amount"].sum(), 2)
+            data_rows.append(total_row)
+
+            ws_p.update(data_rows, value_input_option="USER_ENTERED")
+
+            # Bold the Total row
+            total_row_idx = len(partner_df) + 2  # +1 header, +1 for 1-based indexing
+            ws_p.format(
+                f"A{total_row_idx}:{chr(65 + len(partner_df.columns) - 1)}{total_row_idx}",
+                {"textFormat": {"bold": True}},
+            )
+
     return spreadsheet.url
 
 

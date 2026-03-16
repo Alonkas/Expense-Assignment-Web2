@@ -339,4 +339,31 @@ def generate_excel(df, partners=None, has_shared_partner=False, shares_shared=No
                 max_len = max(col_max if pd.notna(col_max) else 0, len(col)) + 5
                 ws.set_column(i, i, max_len)
 
+        # Per-partner sheets
+        if partners:
+            bold = writer.book.add_format({'bold': True})
+            amount_col_idx = list(export_df.columns).index('Amount') if 'Amount' in export_df.columns else None
+
+            for name in partners:
+                partner_df = export_df[export_df['Partner'] == name].reset_index(drop=True)
+                sheet_name = name[:31]  # xlsxwriter 31-char limit
+                partner_df.to_excel(writer, index=False, sheet_name=sheet_name)
+
+                ws_p = writer.sheets[sheet_name]
+                # Auto-size columns
+                for i, col in enumerate(partner_df.columns):
+                    col_max = partner_df[col].astype(str).map(len).max()
+                    max_len = max(col_max if pd.notna(col_max) else 0, len(col)) + 5
+                    ws_p.set_column(i, i, max_len)
+
+                # Total row
+                total_row = len(partner_df) + 1  # +1 for header
+                ws_p.write(total_row, 0, 'Total', bold)
+                if amount_col_idx is not None and len(partner_df) > 0:
+                    ws_p.write_formula(
+                        total_row, amount_col_idx,
+                        f'=SUM({chr(65 + amount_col_idx)}2:{chr(65 + amount_col_idx)}{total_row})',
+                        bold
+                    )
+
     return output.getvalue()

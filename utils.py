@@ -184,6 +184,7 @@ def save_category_rules(rules):
         rows = [["Description", "Category"]]
         for description in sorted(rules.keys()):
             rows.append([description, rules[description]])
+        ws.resize(len(rows), 2)
         ws.update(rows, value_input_option="USER_ENTERED")
     except Exception as e:
         st.warning(f"⚠️ Could not save category rules to Google Sheets: {e}")
@@ -257,10 +258,9 @@ def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None)
     except gspread.exceptions.WorksheetNotFound:
         ws1 = spreadsheet.add_worksheet("All Expenses", rows=1, cols=1)
     ws1.clear()
-    ws1.update(
-        [export_df.columns.tolist()] + export_df.values.tolist(),
-        value_input_option="USER_ENTERED",
-    )
+    all_data = [export_df.columns.tolist()] + export_df.values.tolist()
+    ws1.resize(len(all_data), len(export_df.columns))
+    ws1.update(all_data, value_input_option="USER_ENTERED")
 
     # --- Worksheet 2: Summary ---
     try:
@@ -292,6 +292,7 @@ def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None)
             total = df.loc[df["Partner"] == p, "Amount"].sum()
             rows.append([p, round(total, 2)])
 
+    ws2.resize(len(rows), len(rows[0]))
     ws2.update(rows, value_input_option="USER_ENTERED")
 
     # --- Per-partner worksheets ---
@@ -314,6 +315,13 @@ def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None)
                 total_row[amount_col] = round(partner_df["Amount"].sum(), 2)
             data_rows.append(total_row)
 
+            # Resize to fit data + category summary section
+            num_categories = partner_df["Category"].nunique() if len(partner_df) > 0 else 0
+            # rows: header + data + total + separator + cat title + cat headers + categories + cat total
+            total_rows = len(data_rows) + (4 + num_categories if num_categories > 0 else 0)
+            total_cols = max(len(partner_df.columns), 3)  # at least 3 for category summary
+            ws_p.resize(total_rows, total_cols)
+
             ws_p.update(data_rows, value_input_option="USER_ENTERED")
 
             # Bold the Total row
@@ -322,6 +330,40 @@ def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None)
                 f"A{total_row_idx}:{chr(65 + len(partner_df.columns) - 1)}{total_row_idx}",
                 {"textFormat": {"bold": True}},
             )
+
+            # Category Summary breakdown
+            if len(partner_df) > 0:
+                cat_sums = (
+                    partner_df.groupby("Category")["Amount"]
+                    .sum()
+                    .sort_values(ascending=False)
+                )
+                cat_total = cat_sums.sum()
+
+                cat_rows = [
+                    [""],  # blank separator
+                    ["Category Summary", "", ""],
+                    ["Category", "Amount", "% of Total"],
+                ]
+                for cat, amt in cat_sums.items():
+                    pct = f"{amt / cat_total * 100:.1f}%" if cat_total else "0.0%"
+                    cat_rows.append([cat, round(float(amt), 2), pct])
+                cat_rows.append(["Total", round(float(cat_total), 2), "100.0%"])
+
+                cat_start_row = total_row_idx + 1  # row after Total
+                ws_p.update(
+                    f"A{cat_start_row}",
+                    cat_rows,
+                    value_input_option="USER_ENTERED",
+                )
+
+                # Bold header and total rows
+                header_row = cat_start_row + 1  # "Category Summary" title
+                col_header_row = cat_start_row + 2  # Column headers
+                cat_total_row = cat_start_row + 2 + len(cat_sums) + 1  # Total row
+                ws_p.format(f"A{header_row}:C{header_row}", {"textFormat": {"bold": True}})
+                ws_p.format(f"A{col_header_row}:C{col_header_row}", {"textFormat": {"bold": True}})
+                ws_p.format(f"A{cat_total_row}:C{cat_total_row}", {"textFormat": {"bold": True}})
 
     return spreadsheet.url
 
@@ -371,6 +413,8 @@ def generate_excel(df, partners=None, has_shared_partner=False, shares_shared=No
         # Per-partner sheets
         if partners:
             bold = writer.book.add_format({'bold': True})
+            pct_fmt = writer.book.add_format({'num_format': '0.0%'})
+            pct_bold_fmt = writer.book.add_format({'num_format': '0.0%', 'bold': True})
             amount_col_idx = list(export_df.columns).index('Amount') if 'Amount' in export_df.columns else None
 
             for name in partners:
@@ -394,5 +438,31 @@ def generate_excel(df, partners=None, has_shared_partner=False, shares_shared=No
                         f'=SUM({chr(65 + amount_col_idx)}2:{chr(65 + amount_col_idx)}{total_row})',
                         bold
                     )
+
+                # Category Summary breakdown
+                if len(partner_df) > 0:
+                    cat_sums = (
+                        partner_df.groupby('Category')['Amount']
+                        .sum()
+                        .sort_values(ascending=False)
+                    )
+                    cat_total = cat_sums.sum()
+
+                    cat_start_row = total_row + 2  # blank row separator
+                    ws_p.write(cat_start_row, 0, 'Category Summary', bold)
+                    ws_p.write(cat_start_row + 1, 0, 'Category', bold)
+                    ws_p.write(cat_start_row + 1, 1, 'Amount', bold)
+                    ws_p.write(cat_start_row + 1, 2, '% of Total', bold)
+
+                    for ci, (cat, amt) in enumerate(cat_sums.items()):
+                        r = cat_start_row + 2 + ci
+                        ws_p.write(r, 0, cat)
+                        ws_p.write(r, 1, round(amt, 2))
+                        ws_p.write(r, 2, amt / cat_total if cat_total else 0, pct_fmt)
+
+                    cat_total_row = cat_start_row + 2 + len(cat_sums)
+                    ws_p.write(cat_total_row, 0, 'Total', bold)
+                    ws_p.write(cat_total_row, 1, round(cat_total, 2), bold)
+                    ws_p.write(cat_total_row, 2, 1.0, pct_bold_fmt)
 
     return output.getvalue()

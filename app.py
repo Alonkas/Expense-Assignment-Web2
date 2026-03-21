@@ -8,7 +8,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.4.3.0"
+APP_VERSION = "Ver.4.5.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -33,6 +33,10 @@ if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
 if 'verified_history' not in st.session_state:
     st.session_state.verified_history = []
+if 'rules_editing' not in st.session_state:
+    st.session_state.rules_editing = False
+if 'rules_edit_snapshot' not in st.session_state:
+    st.session_state.rules_edit_snapshot = None
 
 # --- ALWAYS DARK THEME ---
 badge_bg = "rgba(30,30,30,0.8)"
@@ -148,9 +152,9 @@ else:
 
     st.title("Expense Dashboard")
 
-    tab_focus, tab_table, tab_results, tab_rules, tab_analytics = st.tabs([
+    tab_focus, tab_table, tab_results, tab_rules, tab_cat_summary, tab_analytics = st.tabs([
         "🎯 Focus Mode (Verification)", "📊 Table View",
-        "🏁 Final Results", "🏷️ Category Rules", "📈 Analytics"
+        "🏁 Final Results", "🏷️ Category Rules", "📋 Category Summary", "📈 Analytics"
     ])
 
     # --- TAB 1: FOCUS MODE ---
@@ -167,7 +171,8 @@ else:
             if st.session_state.verified_history:
                 if st.button("⬅️ Go Back", key="go_back_done_btn"):
                     prev_idx = st.session_state.verified_history.pop()
-                    st.session_state.expenses.at[prev_idx, 'Verified'] = False
+                    if prev_idx in st.session_state.expenses.index:
+                        st.session_state.expenses.at[prev_idx, 'Verified'] = False
                     st.rerun()
         else:
             # Get current item
@@ -182,7 +187,8 @@ else:
             if st.session_state.verified_history:
                 if st.button("⬅️ Go Back", key="go_back_btn"):
                     prev_idx = st.session_state.verified_history.pop()
-                    st.session_state.expenses.at[prev_idx, 'Verified'] = False
+                    if prev_idx in st.session_state.expenses.index:
+                        st.session_state.expenses.at[prev_idx, 'Verified'] = False
                     st.rerun()
 
             # --- EXPENSE CARD ---
@@ -192,7 +198,7 @@ else:
                 {"<div style='display:inline-block; background:#444; color:#ccc; font-size:0.75em; padding:2px 8px; border-radius:8px; margin-bottom:6px;'>" + html.escape(str(row['Source'])) + "</div>" if row.get('Source') else ""}
                 <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{html.escape(str(row['Date']))}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{html.escape(str(row['Description']))}</div>
-                <div style="font-size:2.5em; font-weight:900; color:{card_text};">{row['Amount']:.2f}</div>
+                <div style="font-size:2.5em; font-weight:900; color:{card_text};">{html.escape(f"{row['Amount']:.2f}")}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -404,38 +410,185 @@ else:
 
     # --- TAB 4: CATEGORY RULES ---
     with tab_rules:
-        st.header("🏷️ Category References")
-        st.caption("These are learned automatically when you verify expenses. You can also edit them here or directly in Google Sheets.")
+        st.header("🏷️ Category Rules")
+        st.caption("Learned automatically when you verify expenses.")
 
         rules = st.session_state.category_rules
+        editing = st.session_state.rules_editing
+
+        # --- Action bar ---
+        col_search, col_btn1, col_btn2, col_btn3 = st.columns([3, 1, 1, 1])
+        with col_search:
+            search = st.text_input("🔍", placeholder="Search rules...",
+                                   label_visibility="collapsed", key="rules_search_input")
+        save_clicked = cancel_clicked = False
+        with col_btn1:
+            if not editing:
+                if st.button("✏️ Edit", use_container_width=True, disabled=not rules):
+                    # Note: if Focus Mode writes a rule while editing is active,
+                    # Cancel will revert that write. Acceptable trade-off.
+                    st.session_state.rules_edit_snapshot = dict(rules)
+                    st.session_state.rules_editing = True
+                    st.rerun()
+            else:
+                save_clicked = st.button("💾 Save", use_container_width=True)
+        with col_btn2:
+            if editing:
+                cancel_clicked = st.button("❌ Cancel", use_container_width=True)
+        with col_btn3:
+            if not editing:
+                if st.button("🔄 Reload", use_container_width=True):
+                    st.session_state.category_rules = load_category_rules()
+                    st.toast("Rules reloaded from Google Sheets.")
+                    st.rerun()
+
+        # --- Add New Rule ---
+        with st.expander("➕ Add New Rule"):
+            if not editing:
+                add_col1, add_col2, add_col3 = st.columns([2, 2, 1])
+                with add_col1:
+                    new_desc = st.text_input("Description", key="new_rule_desc",
+                                             placeholder="e.g. supermarket purchase")
+                with add_col2:
+                    cat_options = st.session_state.categories or ["Uncategorized"]
+                    new_cat = st.selectbox("Category", options=cat_options,
+                                           key="new_rule_cat")
+                with add_col3:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("Add", use_container_width=True):
+                        desc_key = new_desc.strip().lower()
+                        if not desc_key:
+                            st.warning("Description cannot be empty.")
+                        elif desc_key in rules:
+                            st.warning("A rule for this description already exists.")
+                        else:
+                            rules[desc_key] = new_cat
+                            st.session_state.category_rules = rules
+                            save_category_rules(rules)
+                            st.toast("Rule added.")
+                            st.rerun()
+            else:
+                st.info("Exit edit mode to add new rules.")
+
+        # --- Rules table ---
         if rules:
             rules_data = [{"Description": k, "Category": v} for k, v in sorted(rules.items())]
             rules_df = pd.DataFrame(rules_data)
-            edited_rules = st.data_editor(
-                rules_df,
-                column_config={
-                    "Category": st.column_config.SelectboxColumn(
-                        options=st.session_state.categories, required=True
-                    )
-                },
-                use_container_width=True, hide_index=True, num_rows="dynamic",
-                key="rules_editor"
-            )
-            # Sync edits back
-            if not edited_rules.equals(rules_df):
-                new_rules = {}
-                for _, r in edited_rules.iterrows():
-                    desc = str(r["Description"]).strip().lower()
-                    cat = str(r["Category"]).strip()
-                    if desc and cat:
-                        new_rules[desc] = cat
-                st.session_state.category_rules = new_rules
-                save_category_rules(new_rules)
-                st.rerun()
+
+            # Apply search filter
+            if search:
+                mask = (rules_df["Description"].str.contains(search, case=False, na=False) |
+                        rules_df["Category"].str.contains(search, case=False, na=False))
+                display_df = rules_df[mask].reset_index(drop=True)
+            else:
+                display_df = rules_df
+
+            filtered_keys = set(display_df["Description"].tolist())
+            st.caption(f"Showing {len(display_df)} of {len(rules_df)} rules")
+
+            if not editing:
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                edited_df = st.data_editor(
+                    display_df,
+                    column_config={
+                        "Category": st.column_config.SelectboxColumn(
+                            options=st.session_state.categories or ["Uncategorized"], required=True
+                        )
+                    },
+                    use_container_width=True, hide_index=True, num_rows="dynamic",
+                    key="rules_editor"
+                )
+
+                # Process Save/Cancel after editor renders
+                if save_clicked:
+                    new_rules = dict(rules)
+                    for key in filtered_keys:
+                        new_rules.pop(key, None)
+                    for _, r in edited_df.iterrows():
+                        desc = str(r["Description"]).strip().lower()
+                        cat = str(r["Category"]).strip()
+                        if desc and cat and cat.lower() != "nan":
+                            new_rules[desc] = cat
+                    st.session_state.category_rules = new_rules
+                    save_category_rules(new_rules)
+                    st.session_state.rules_editing = False
+                    st.session_state.rules_edit_snapshot = None
+                    st.toast("Rules saved.")
+                    st.rerun()
+
+                if cancel_clicked:
+                    st.session_state.category_rules = st.session_state.rules_edit_snapshot
+                    st.session_state.rules_editing = False
+                    st.session_state.rules_edit_snapshot = None
+                    st.rerun()
         else:
             st.info("No rules yet. Rules are learned automatically as you verify expenses.")
 
-    # --- TAB 5: ANALYTICS ---
+    # --- TAB 5: CATEGORY SUMMARY ---
+    with tab_cat_summary:
+        df = st.session_state.expenses
+        partners = st.session_state.partners
+        has_shared = st.session_state.has_shared_partner
+
+        if df.empty:
+            st.info("No expenses loaded yet.")
+        else:
+            real_partners = [p for p in partners if p != "Shared"]
+            all_tab_partners = real_partners + (["Shared"] if has_shared else [])
+            tab_labels = [f"👤 {p}" for p in real_partners] + (["⚖️ Shared"] if has_shared else [])
+
+            cat_tabs = st.tabs(tab_labels)
+
+            for cat_tab, partner in zip(cat_tabs, all_tab_partners):
+                with cat_tab:
+                    color = partners.get(partner, "#888")
+                    partner_df = df[df['Partner'] == partner]
+
+                    if partner_df.empty:
+                        st.caption("No expenses for this partner.")
+                    else:
+                        total = partner_df['Amount'].sum()
+                        cat_sums = (
+                            partner_df.groupby("Category", as_index=False)["Amount"]
+                            .sum()
+                            .sort_values("Amount", ascending=False)
+                        )
+                        cat_sums["% of Total"] = (cat_sums["Amount"] / total * 100).round(1)
+
+                        # Summary table with total row
+                        display_df = cat_sums.copy()
+                        total_row = pd.DataFrame([{
+                            "Category": "Total",
+                            "Amount": total,
+                            "% of Total": 100.0,
+                        }])
+                        display_df = pd.concat([display_df, total_row], ignore_index=True)
+
+                        st.markdown(
+                            f'<div style="font-size:1.4em; font-weight:800; color:{color}; margin-bottom:12px;">'
+                            f'{html.escape(partner)} — Total: {total:,.2f}</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.dataframe(
+                            display_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Amount": st.column_config.NumberColumn(format="%.2f"),
+                                "% of Total": st.column_config.NumberColumn(format="%.1f%%"),
+                            },
+                        )
+
+                        # Pie chart
+                        fig = px.pie(
+                            cat_sums, names="Category", values="Amount",
+                            title=f"{partner}'s expenses by category",
+                            template="plotly_dark",
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+
+    # --- TAB 6: ANALYTICS ---
     with tab_analytics:
         df = st.session_state.expenses
         partners = st.session_state.partners

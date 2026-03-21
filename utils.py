@@ -1,8 +1,12 @@
 import pandas as pd
 import io
+import csv
+import os
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+
+LOCAL_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 COLUMN_KEYWORDS = {
     'date': ['date', 'תאריך', 'תאריך עסקה'],
@@ -111,83 +115,66 @@ def _get_spreadsheet():
 
 
 def load_categories():
-    """Load categories list from the 'Categories' Google Sheet tab."""
+    """Load categories list from local CSV file."""
     defaults = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
+    filepath = os.path.join(LOCAL_DATA_DIR, "categories.csv")
+    if not os.path.exists(filepath):
+        return defaults
     try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Categories")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet("Categories", rows=len(defaults) + 1, cols=1)
-            ws.update([["Category"]] + [[c] for c in defaults], value_input_option="USER_ENTERED")
-            return defaults
-
-        records = ws.get_all_records()
-        categories = [str(row.get("Category", "")).strip() for row in records if str(row.get("Category", "")).strip()]
+        with open(filepath, "r", newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            categories = [row["Category"].strip() for row in reader if row.get("Category", "").strip()]
         return categories if categories else defaults
     except Exception as e:
-        st.warning(f"⚠️ Could not load categories from Google Sheets: {e}")
+        st.warning(f"Could not load categories from {filepath}: {e}")
         return defaults
 
 
 def save_categories(categories):
-    """Write the categories list to the 'Categories' Google Sheet tab."""
+    """Write the categories list to local CSV file."""
+    os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
+    filepath = os.path.join(LOCAL_DATA_DIR, "categories.csv")
     try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Categories")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet("Categories", rows=len(categories) + 1, cols=1)
-
-        ws.clear()
-        rows = [["Category"]] + [[c] for c in categories]
-        ws.update(rows, value_input_option="USER_ENTERED")
+        with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Category"])
+            for c in categories:
+                writer.writerow([c])
     except Exception as e:
-        st.warning(f"⚠️ Could not save categories to Google Sheets: {e}")
+        st.warning(f"Could not save categories to {filepath}: {e}")
 
 
 def load_category_rules():
-    """Load description→category rules from the 'Category Rules' Google Sheet."""
+    """Load description-to-category rules from local CSV file."""
+    filepath = os.path.join(LOCAL_DATA_DIR, "category_rules.csv")
+    if not os.path.exists(filepath):
+        return {}
     try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Category Rules")
-        except gspread.exceptions.WorksheetNotFound:
-            return {}
-
-        records = ws.get_all_records()
-        rules = {}
-        for row in records:
-            description = str(row.get("Description", "")).strip().lower()
-            category = str(row.get("Category", "")).strip()
-            if description and category:
-                rules[description] = category
+        with open(filepath, "r", newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            rules = {}
+            for row in reader:
+                description = row.get("Description", "").strip().lower()
+                category = row.get("Category", "").strip()
+                if description and category:
+                    rules[description] = category
         return rules
     except Exception:
         return {}
 
 
 def save_category_rules(rules):
-    """Save description→category rules to the 'Category Rules' Google Sheet."""
+    """Save description-to-category rules to local CSV file."""
+    os.makedirs(LOCAL_DATA_DIR, exist_ok=True)
+    filepath = os.path.join(LOCAL_DATA_DIR, "category_rules.csv")
     try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Category Rules")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet("Category Rules", rows=1, cols=2)
-
-        ws.clear()
-        rows = [["Description", "Category"]]
-        for description in sorted(rules.keys()):
-            rows.append([description, rules[description]])
-        ws.resize(len(rows), 2)
-        ws.update(rows, value_input_option="USER_ENTERED")
+        with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Description", "Category"])
+            for description in sorted(rules.keys()):
+                writer.writerow([description, rules[description]])
     except Exception as e:
-        st.warning(f"⚠️ Could not save category rules to Google Sheets: {e}")
+        st.warning(f"Could not save category rules to {filepath}: {e}")
 
 
 def calculate_shared_split(df, partners, has_shared_partner, shares_shared=None):

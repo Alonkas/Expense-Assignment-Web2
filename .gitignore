@@ -1,0 +1,15 @@
+# Secrets — NEVER commit
+.streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude worktrees and planning (local dev only)
+.claude/worktrees/
+.planning/
+
+# OS files
+.DS_Store
+Thumbs.db

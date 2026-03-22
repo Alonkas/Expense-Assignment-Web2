@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Roommate Expense Manager — a Streamlit web app for splitting and tracking shared expenses between roommates. Users upload Excel files, assign expenses to partners via a card-based Focus Mode or editable Table View, auto-categorize using learned rules, and export reports to Excel or Google Sheets.
 
-Current version: 4.7.0
+Current version: 4.8.0
 
 ## Commands
 

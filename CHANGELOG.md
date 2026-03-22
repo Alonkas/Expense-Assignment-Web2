@@ -4,6 +4,11 @@ All notable changes to the Roommate Expense Manager are documented here.
 
 ---
 
+## Ver.4.8.0
+- Bump version to 4.8.0
+
+---
+
 ## Ver.4.7.0
 - **Settings tab** — Renamed "Category Rules" to "Settings" and moved it to the last tab position (after Analytics)
 - **External editing** — Removed in-app rule editing (Edit/Save/Cancel, Add New Rule); added "Open in Excel" button to edit the local `data/category_rules.csv` directly, with a Reload button to refresh after changes

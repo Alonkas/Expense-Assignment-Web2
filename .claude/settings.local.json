@@ -9,7 +9,14 @@
       "Bash(pip3 install:*)",
       "Bash(powershell.exe:*)",
       "Bash(git:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(python:*)",
+      "Bash(pip list:*)",
+      "Bash(timeout:*)",
+      "Bash(ls /c/Python3*/python.exe)",
+      "Read(//c/Users/Alon.ALON2020/AppData/Local/Programs/Python/**)",
+      "Bash(where python:*)",
+      "Bash(py --list)"
     ]
   }
 }

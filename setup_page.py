@@ -19,7 +19,7 @@ def render_setup_page():
     step = st.session_state.get('setup_step', 1)
 
     # Progress indicator
-    labels = ["Upload", "Map Columns", "Partners", "Finish"]
+    labels = ["Upload", "Map Columns", "Partners"]
     cols = st.columns(len(labels))
     for i, label in enumerate(labels):
         s = i + 1
@@ -38,8 +38,6 @@ def render_setup_page():
         _step_column_mapping()
     elif step == 3:
         _step_partners()
-    elif step == 4:
-        _step_finish()
 
 
 def _step_upload():
@@ -123,7 +121,8 @@ def _step_column_mapping():
 
         # Skip partner config if partners already exist (Add More Files flow)
         if st.session_state.partners:
-            st.session_state.setup_step = 4
+            st.session_state.setup_complete = True
+            _cleanup_wizard_state()
         else:
             st.session_state.setup_step = 3
         st.rerun()
@@ -237,40 +236,6 @@ def _step_partners():
         else:
             st.session_state.has_shared_partner = False
             st.session_state.shares_shared = {}
-        st.session_state.setup_step = 4
-        st.rerun()
-
-
-def _step_finish():
-    if st.button("Back", key="back_to_3"):
-        # Go back to partners (or mapping if partners already existed)
-        if st.session_state.partners:
-            st.session_state.setup_step = 3
-        else:
-            st.session_state.setup_step = 2
-        st.rerun()
-
-    st.subheader("4. Setup Complete")
-
-    df = st.session_state.expenses
-    partners = st.session_state.partners
-
-    # Summary
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Rows", len(df))
-    col2.metric("Partners", len(partners))
-    col3.metric("Categories", len(st.session_state.categories))
-
-    st.markdown(f"**Partners:** {', '.join(partners.keys())}")
-
-    if st.session_state.has_shared_partner:
-        sharing = [p for p, v in st.session_state.shares_shared.items() if v]
-        st.caption(f"Shared expenses split among: {', '.join(sharing)}")
-
-    st.markdown("**Preview (first 5 rows):**")
-    st.dataframe(df.head(5), use_container_width=True, hide_index=True)
-
-    if st.button("Go to Dashboard", type="primary", use_container_width=True):
         st.session_state.setup_complete = True
         _cleanup_wizard_state()
         st.rerun()

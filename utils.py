@@ -79,15 +79,6 @@ def apply_mapping(df, mapping):
     return df
 
 
-def load_excel(file, mapping):
-    try:
-        df = pd.read_excel(file)
-    except Exception as e:
-        st.error(f"Error reading file: {e}")
-        return None
-
-    return apply_mapping(df, mapping)
-
 def extract_categories(df):
     """Extracts unique categories from the loaded dataframe."""
     if 'Category' in df.columns:

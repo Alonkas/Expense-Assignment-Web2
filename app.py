@@ -1,4 +1,5 @@
 import html
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -8,7 +9,7 @@ from setup_page import render_setup_page
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.4.3.0"
+APP_VERSION = "Ver.4.7.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -23,12 +24,6 @@ if 'has_shared_partner' not in st.session_state:
     st.session_state.has_shared_partner = False
 if 'shares_shared' not in st.session_state:
     st.session_state.shares_shared = {}
-if 'setup_step' not in st.session_state:
-    st.session_state.setup_step = 1
-if 'raw_df' not in st.session_state:
-    st.session_state.raw_df = None
-if 'detected_mapping' not in st.session_state:
-    st.session_state.detected_mapping = None
 if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
 if 'verified_history' not in st.session_state:
@@ -148,9 +143,9 @@ else:
 
     st.title("Expense Dashboard")
 
-    tab_focus, tab_table, tab_results, tab_rules, tab_analytics = st.tabs([
+    tab_focus, tab_table, tab_results, tab_cat_summary, tab_analytics, tab_settings = st.tabs([
         "🎯 Focus Mode (Verification)", "📊 Table View",
-        "🏁 Final Results", "🏷️ Category Rules", "📈 Analytics"
+        "🏁 Final Results", "📋 Category Summary", "📈 Analytics", "⚙️ Settings"
     ])
 
     # --- TAB 1: FOCUS MODE ---
@@ -167,7 +162,8 @@ else:
             if st.session_state.verified_history:
                 if st.button("⬅️ Go Back", key="go_back_done_btn"):
                     prev_idx = st.session_state.verified_history.pop()
-                    st.session_state.expenses.at[prev_idx, 'Verified'] = False
+                    if prev_idx in st.session_state.expenses.index:
+                        st.session_state.expenses.at[prev_idx, 'Verified'] = False
                     st.rerun()
         else:
             # Get current item
@@ -182,7 +178,8 @@ else:
             if st.session_state.verified_history:
                 if st.button("⬅️ Go Back", key="go_back_btn"):
                     prev_idx = st.session_state.verified_history.pop()
-                    st.session_state.expenses.at[prev_idx, 'Verified'] = False
+                    if prev_idx in st.session_state.expenses.index:
+                        st.session_state.expenses.at[prev_idx, 'Verified'] = False
                     st.rerun()
 
             # --- EXPENSE CARD ---
@@ -192,7 +189,7 @@ else:
                 {"<div style='display:inline-block; background:#444; color:#ccc; font-size:0.75em; padding:2px 8px; border-radius:8px; margin-bottom:6px;'>" + html.escape(str(row['Source'])) + "</div>" if row.get('Source') else ""}
                 <div style="color:#888; font-size:1.1em; margin-bottom:5px;">{html.escape(str(row['Date']))}</div>
                 <div style="font-size:1.8em; font-weight:bold; margin-bottom:10px;">{html.escape(str(row['Description']))}</div>
-                <div style="font-size:2.5em; font-weight:900; color:{card_text};">{row['Amount']:.2f}</div>
+                <div style="font-size:2.5em; font-weight:900; color:{card_text};">{html.escape(f"{row['Amount']:.2f}")}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -365,7 +362,6 @@ else:
                 st.subheader("Individual Totals (own expenses only)")
                 ind_cols = st.columns(len(real_partners))
                 for i, p in enumerate(real_partners):
-                    color = st.session_state.partners.get(p, "#333")
                     with ind_cols[i]:
                         st.metric(p, f"{breakdown['individual_totals'][p]:,.2f}")
 
@@ -402,38 +398,107 @@ else:
                 if not p_df.empty:
                     st.download_button(f"📥 {p}", data=generate_excel(p_df), file_name=f"{p}.xlsx", key=f"dl_{p}")
 
-    # --- TAB 4: CATEGORY RULES ---
-    with tab_rules:
-        st.header("🏷️ Category References")
-        st.caption("These are learned automatically when you verify expenses. You can also edit them here or directly in Google Sheets.")
+    # --- TAB 6: SETTINGS ---
+    with tab_settings:
+        st.header("⚙️ Settings")
+
+        st.subheader("Category Rules")
+        st.caption("Learned automatically when you verify expenses. Edit the CSV file directly to add, modify, or remove rules.")
 
         rules = st.session_state.category_rules
+        rules_filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "category_rules.csv")
+
+        col_btn1, col_btn2 = st.columns([1, 1])
+        with col_btn1:
+            if st.button("📂 Open in Excel", use_container_width=True, disabled=not os.path.exists(rules_filepath)):
+                os.startfile(rules_filepath)
+        with col_btn2:
+            if st.button("🔄 Reload Rules", use_container_width=True):
+                st.session_state.category_rules = load_category_rules()
+                st.toast("Rules reloaded from file.")
+                st.rerun()
+
+        # Search and display
         if rules:
+            search = st.text_input("🔍", placeholder="Search rules...",
+                                   label_visibility="collapsed", key="rules_search_input")
             rules_data = [{"Description": k, "Category": v} for k, v in sorted(rules.items())]
             rules_df = pd.DataFrame(rules_data)
-            edited_rules = st.data_editor(
-                rules_df,
-                column_config={
-                    "Category": st.column_config.SelectboxColumn(
-                        options=st.session_state.categories, required=True
-                    )
-                },
-                use_container_width=True, hide_index=True, num_rows="dynamic",
-                key="rules_editor"
-            )
-            # Sync edits back
-            if not edited_rules.equals(rules_df):
-                new_rules = {}
-                for _, r in edited_rules.iterrows():
-                    desc = str(r["Description"]).strip().lower()
-                    cat = str(r["Category"]).strip()
-                    if desc and cat:
-                        new_rules[desc] = cat
-                st.session_state.category_rules = new_rules
-                save_category_rules(new_rules)
-                st.rerun()
+
+            if search:
+                mask = (rules_df["Description"].str.contains(search, case=False, na=False) |
+                        rules_df["Category"].str.contains(search, case=False, na=False))
+                display_df = rules_df[mask].reset_index(drop=True)
+            else:
+                display_df = rules_df
+
+            st.caption(f"Showing {len(display_df)} of {len(rules_df)} rules")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
             st.info("No rules yet. Rules are learned automatically as you verify expenses.")
+
+    # --- TAB 4: CATEGORY SUMMARY ---
+    with tab_cat_summary:
+        df = st.session_state.expenses
+        partners = st.session_state.partners
+        has_shared = st.session_state.has_shared_partner
+
+        if df.empty:
+            st.info("No expenses loaded yet.")
+        else:
+            real_partners = [p for p in partners if p != "Shared"]
+            all_tab_partners = real_partners + (["Shared"] if has_shared else [])
+            tab_labels = [f"👤 {p}" for p in real_partners] + (["⚖️ Shared"] if has_shared else [])
+
+            cat_tabs = st.tabs(tab_labels)
+
+            for cat_tab, partner in zip(cat_tabs, all_tab_partners):
+                with cat_tab:
+                    color = partners.get(partner, "#888")
+                    partner_df = df[df['Partner'] == partner]
+
+                    if partner_df.empty:
+                        st.caption("No expenses for this partner.")
+                    else:
+                        total = partner_df['Amount'].sum()
+                        cat_sums = (
+                            partner_df.groupby("Category", as_index=False)["Amount"]
+                            .sum()
+                            .sort_values("Amount", ascending=False)
+                        )
+                        cat_sums["% of Total"] = (cat_sums["Amount"] / total * 100).round(1)
+
+                        # Summary table with total row
+                        display_df = cat_sums.copy()
+                        total_row = pd.DataFrame([{
+                            "Category": "Total",
+                            "Amount": total,
+                            "% of Total": 100.0,
+                        }])
+                        display_df = pd.concat([display_df, total_row], ignore_index=True)
+
+                        st.markdown(
+                            f'<div style="font-size:1.4em; font-weight:800; color:{color}; margin-bottom:12px;">'
+                            f'{html.escape(partner)} — Total: {total:,.2f}</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.dataframe(
+                            display_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Amount": st.column_config.NumberColumn(format="%.2f"),
+                                "% of Total": st.column_config.NumberColumn(format="%.1f%%"),
+                            },
+                        )
+
+                        # Pie chart
+                        fig = px.pie(
+                            cat_sums, names="Category", values="Amount",
+                            title=f"{partner}'s expenses by category",
+                            template="plotly_dark",
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
 
     # --- TAB 5: ANALYTICS ---
     with tab_analytics:

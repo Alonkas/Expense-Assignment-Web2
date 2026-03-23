@@ -3,7 +3,7 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils import generate_excel, calculate_shared_split, write_to_google_sheets, load_category_rules, save_category_rules, load_categories, save_categories
+from utils import generate_excel, calculate_shared_split, load_category_rules, save_category_rules, load_categories, save_categories
 from setup_page import render_setup_page
 
 # --- CONFIGURATION ---
@@ -341,15 +341,6 @@ else:
                              data=generate_excel(res_df, st.session_state.partners, has_shared, shares_shared),
                              file_name="Report.xlsx",
                              type="primary")
-
-            if st.button("📤 Write to Google Sheets", type="secondary"):
-                with st.spinner("Writing to Google Sheets..."):
-                    try:
-                        url = write_to_google_sheets(res_df, st.session_state.partners, has_shared, shares_shared)
-                        st.success("Written to Google Sheets!")
-                        st.markdown(f"[Open Google Sheet]({url})")
-                    except Exception as e:
-                        st.error(f"Failed to write to Google Sheets: {e}")
 
             st.divider()
 

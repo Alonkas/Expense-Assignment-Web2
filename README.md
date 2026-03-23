@@ -1,6 +1,6 @@
 # Roommate Expense Manager
 
-A Streamlit web app that helps roommates split and track shared expenses. Upload Excel files, assign each expense to a partner, categorize them, and export polished reports to Excel or Google Sheets.
+A Streamlit web app that helps roommates split and track shared expenses. Upload Excel files, assign each expense to a partner, categorize them, and export polished reports to Excel.
 
 ## Features
 
@@ -34,12 +34,11 @@ A Streamlit web app that helps roommates split and track shared expenses. Upload
   - "Expenses" sheet (all data)
   - "Summary" sheet (shared split breakdown)
   - Per-partner sheets (filtered rows + bold Total sum row)
-- **Write to Google Sheets** — Same structure pushed to a configured Google Sheet
 - Per-partner individual Excel download buttons
 
 #### Category Rules
 - Auto-learned description-to-category mappings (learned during verification)
-- Editable table synced to Google Sheets
+- Stored locally in `data/category_rules.csv`, editable via Excel
 - Rules are applied automatically in Focus Mode for matching descriptions
 
 #### Analytics
@@ -58,13 +57,11 @@ A Streamlit web app that helps roommates split and track shared expenses. Upload
 - Always-dark theme with custom CSS
 - Version badge displayed at bottom-left
 - XSS-safe HTML rendering (all user data escaped)
-- Google Sheets integration for categories, category rules, and full report export
 
 ## Getting Started
 
 ### Prerequisites
 - Python 3.10+
-- A Google Cloud service account (for Google Sheets features)
 
 ### Installation
 ```bash
@@ -77,33 +74,17 @@ pip install -r requirements.txt
 - `openpyxl` — Excel file reading
 - `xlsxwriter` — Excel file writing
 - `plotly` — Analytics charts
-- `gspread` + `google-auth` — Google Sheets integration
 
 ### Running
 ```bash
 streamlit run app.py
 ```
 
-### Google Sheets Setup
-Add a `.streamlit/secrets.toml` file with your service account credentials:
-```toml
-[gcp_service_account]
-type = "service_account"
-project_id = "..."
-private_key_id = "..."
-private_key = "..."
-client_email = "..."
-client_id = "..."
-auth_uri = "..."
-token_uri = "..."
-spreadsheet_id = "YOUR_GOOGLE_SHEET_ID"
-```
-
 ## Project Structure
 ```
 app.py           — Main Streamlit app (dashboard, tabs, sidebar)
 setup_page.py    — Setup wizard (upload, mapping, partners)
-utils.py         — Data processing, Excel/Google Sheets export, category management
+utils.py         — Data processing, Excel export, category management
 run.bat          — Windows launcher script
 requirements.txt — Python dependencies
 ```

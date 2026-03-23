@@ -1,0 +1,22 @@
+# Secrets — NEVER commit
+.streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude local settings
+.claude/settings.local.json
+
+# Claude worktrees and planning (local dev only)
+.claude/worktrees/
+.planning/
+
+# User data (generated at runtime)
+data/category_rules.csv
+data/categories.csv
+
+# OS files
+.DS_Store
+Thumbs.db

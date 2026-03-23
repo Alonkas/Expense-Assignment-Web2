@@ -4,6 +4,13 @@ All notable changes to the Roommate Expense Manager are documented here.
 
 ---
 
+## Ver.5.0.0
+- **Security cleanup** — Removed personal expense data (`data/categories.csv`, `data/category_rules.csv`) from git tracking; files are now generated at runtime and gitignored
+- **Untracked build artifacts** — Removed committed `__pycache__/*.pyc` files and `.claude/settings.local.json` from repo
+- **Updated `.gitignore`** — Added rules for user data files, Python cache, and local IDE settings
+
+---
+
 ## Ver.4.7.0
 - **Settings tab** — Renamed "Category Rules" to "Settings" and moved it to the last tab position (after Analytics)
 - **External editing** — Removed in-app rule editing (Edit/Save/Cancel, Add New Rule); added "Open in Excel" button to edit the local `data/category_rules.csv` directly, with a Reload button to refresh after changes

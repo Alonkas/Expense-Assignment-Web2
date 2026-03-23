@@ -1,8 +1,7 @@
+import os
 import pandas as pd
 import io
 import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
 
 COLUMN_KEYWORDS = {
     'date': ['date', 'תאריך', 'תאריך עסקה'],
@@ -14,6 +13,8 @@ COLUMN_KEYWORDS = {
     'comment': ['comment', 'note', 'notes', 'הערה', 'הערות'],
 }
 SHARED_KEYWORDS = ['shared', 'משותף', 'common']
+
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
 def auto_detect_columns(df):
@@ -88,70 +89,34 @@ def extract_categories(df):
         return [str(c) for c in unique_cats if str(c) != "Uncategorized"]
     return []
 
-def _get_spreadsheet():
-    """Return the configured gspread Spreadsheet object."""
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]), scopes=scopes
-    )
-    gc = gspread.authorize(creds)
-    return gc.open_by_key(st.secrets["gcp_service_account"]["spreadsheet_id"])
-
 
 def load_categories():
-    """Load categories list from the 'Categories' Google Sheet tab."""
+    """Load categories list from local CSV file."""
     defaults = ["Groceries", "Fuel", "Electricity", "Internet", "Rent", "Insurance", "Dining Out"]
+    filepath = os.path.join(_DATA_DIR, "categories.csv")
     try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Categories")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet("Categories", rows=len(defaults) + 1, cols=1)
-            ws.update([["Category"]] + [[c] for c in defaults], value_input_option="USER_ENTERED")
-            return defaults
-
-        records = ws.get_all_records()
-        categories = [str(row.get("Category", "")).strip() for row in records if str(row.get("Category", "")).strip()]
+        df = pd.read_csv(filepath, encoding="utf-8-sig")
+        categories = [str(row).strip() for row in df["Category"].dropna() if str(row).strip()]
         return categories if categories else defaults
-    except Exception as e:
-        st.warning(f"⚠️ Could not load categories from Google Sheets: {e}")
+    except Exception:
         return defaults
 
 
 def save_categories(categories):
-    """Write the categories list to the 'Categories' Google Sheet tab."""
-    try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Categories")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet("Categories", rows=len(categories) + 1, cols=1)
-
-        ws.clear()
-        rows = [["Category"]] + [[c] for c in categories]
-        ws.update(rows, value_input_option="USER_ENTERED")
-    except Exception as e:
-        st.warning(f"⚠️ Could not save categories to Google Sheets: {e}")
+    """Write the categories list to local CSV file."""
+    filepath = os.path.join(_DATA_DIR, "categories.csv")
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    df = pd.DataFrame({"Category": categories})
+    df.to_csv(filepath, index=False, encoding="utf-8-sig")
 
 
 def load_category_rules():
-    """Load description→category rules from the 'Category Rules' Google Sheet."""
+    """Load description→category rules from local CSV file."""
+    filepath = os.path.join(_DATA_DIR, "category_rules.csv")
     try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Category Rules")
-        except gspread.exceptions.WorksheetNotFound:
-            return {}
-
-        records = ws.get_all_records()
+        df = pd.read_csv(filepath, encoding="utf-8-sig")
         rules = {}
-        for row in records:
+        for _, row in df.iterrows():
             description = str(row.get("Description", "")).strip().lower()
             category = str(row.get("Category", "")).strip()
             if description and category:
@@ -162,22 +127,12 @@ def load_category_rules():
 
 
 def save_category_rules(rules):
-    """Save description→category rules to the 'Category Rules' Google Sheet."""
-    try:
-        spreadsheet = _get_spreadsheet()
-
-        try:
-            ws = spreadsheet.worksheet("Category Rules")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = spreadsheet.add_worksheet("Category Rules", rows=1, cols=2)
-
-        ws.clear()
-        rows = [["Description", "Category"]]
-        for description in sorted(rules.keys()):
-            rows.append([description, rules[description]])
-        ws.update(rows, value_input_option="USER_ENTERED")
-    except Exception as e:
-        st.warning(f"⚠️ Could not save category rules to Google Sheets: {e}")
+    """Save description→category rules to local CSV file."""
+    filepath = os.path.join(_DATA_DIR, "category_rules.csv")
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    rows = [{"Description": k, "Category": v} for k, v in sorted(rules.items())]
+    df = pd.DataFrame(rows)
+    df.to_csv(filepath, index=False, encoding="utf-8-sig")
 
 
 def calculate_shared_split(df, partners, has_shared_partner, shares_shared=None):
@@ -232,89 +187,6 @@ def calculate_shared_split(df, partners, has_shared_partner, shares_shared=None)
         'real_partners': real_partners,
         'sharing_partners': sharing_partners,
     }
-
-def write_to_google_sheets(df, partners, has_shared_partner, shares_shared=None):
-    """Write expense data to an existing Google Sheet and return its URL."""
-    spreadsheet = _get_spreadsheet()
-
-    # --- Worksheet 1: All Expenses ---
-    export_df = df.drop(columns=["Verified"], errors="ignore").copy()
-    if "Date" in export_df.columns:
-        export_df["Date"] = export_df["Date"].astype(str)
-    export_df = export_df.fillna("")
-
-    try:
-        ws1 = spreadsheet.worksheet("All Expenses")
-    except gspread.exceptions.WorksheetNotFound:
-        ws1 = spreadsheet.add_worksheet("All Expenses", rows=1, cols=1)
-    ws1.clear()
-    ws1.update(
-        [export_df.columns.tolist()] + export_df.values.tolist(),
-        value_input_option="USER_ENTERED",
-    )
-
-    # --- Worksheet 2: Summary ---
-    try:
-        ws2 = spreadsheet.worksheet("Summary")
-    except gspread.exceptions.WorksheetNotFound:
-        ws2 = spreadsheet.add_worksheet("Summary", rows=20, cols=10)
-    ws2.clear()
-
-    if has_shared_partner:
-        breakdown = calculate_shared_split(df, partners, has_shared_partner, shares_shared)
-        rows = [["Partner", "Own Total", "Share of Shared", "Grand Total"]]
-        for p in breakdown["real_partners"]:
-            share_val = breakdown["per_person_share"] if p in breakdown["sharing_partners"] else 0.0
-            rows.append([
-                p,
-                round(breakdown["individual_totals"][p], 2),
-                round(share_val, 2),
-                round(breakdown["grand_totals"][p], 2),
-            ])
-        rows.append([
-            "Shared Total",
-            round(breakdown["shared_total"], 2),
-            "",
-            "",
-        ])
-    else:
-        rows = [["Partner", "Total"]]
-        for p in partners:
-            total = df.loc[df["Partner"] == p, "Amount"].sum()
-            rows.append([p, round(total, 2)])
-
-    ws2.update(rows, value_input_option="USER_ENTERED")
-
-    # --- Per-partner worksheets ---
-    if partners:
-        amount_col = export_df.columns.tolist().index("Amount") if "Amount" in export_df.columns else None
-        for name in partners:
-            partner_df = export_df[export_df["Partner"] == name].reset_index(drop=True)
-            sheet_name = name[:100]  # Google Sheets allows up to 100 chars
-            try:
-                ws_p = spreadsheet.worksheet(sheet_name)
-            except gspread.exceptions.WorksheetNotFound:
-                ws_p = spreadsheet.add_worksheet(sheet_name, rows=1, cols=1)
-            ws_p.clear()
-
-            data_rows = [partner_df.columns.tolist()] + partner_df.values.tolist()
-            # Add bold Total row
-            total_row = [""] * len(partner_df.columns)
-            total_row[0] = "Total"
-            if amount_col is not None and len(partner_df) > 0:
-                total_row[amount_col] = round(partner_df["Amount"].sum(), 2)
-            data_rows.append(total_row)
-
-            ws_p.update(data_rows, value_input_option="USER_ENTERED")
-
-            # Bold the Total row
-            total_row_idx = len(partner_df) + 2  # +1 header, +1 for 1-based indexing
-            ws_p.format(
-                f"A{total_row_idx}:{chr(65 + len(partner_df.columns) - 1)}{total_row_idx}",
-                {"textFormat": {"bold": True}},
-            )
-
-    return spreadsheet.url
 
 
 def generate_excel(df, partners=None, has_shared_partner=False, shares_shared=None):

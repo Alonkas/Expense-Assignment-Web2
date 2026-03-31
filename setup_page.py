@@ -52,7 +52,7 @@ def _step_upload():
         try:
             raw_df = pd.read_excel(uploaded_file)
             st.session_state.raw_df = raw_df
-            st.session_state.detected_mapping = auto_detect_columns(raw_df)
+            st.session_state.detected_mapping = auto_detect_columns(raw_df, keywords=st.session_state.get('column_keywords'))
             st.session_state.setup_step = 2
             st.rerun()
         except Exception as e:

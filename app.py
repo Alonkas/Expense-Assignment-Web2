@@ -3,13 +3,13 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils import generate_excel, calculate_shared_split, load_category_rules, save_category_rules, load_categories, save_categories
+from utils import generate_excel, calculate_shared_split, load_category_rules, save_category_rules, load_categories, save_categories, COLUMN_KEYWORDS
 from setup_page import render_setup_page
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Roommate Expense Manager", layout="wide", page_icon="🧾")
 
-APP_VERSION = "Ver.5.0.0"
+APP_VERSION = "Ver.5.1.0"
 
 # --- INITIALIZE STATE ---
 if 'expenses' not in st.session_state:
@@ -28,9 +28,10 @@ if 'category_rules' not in st.session_state:
     st.session_state.category_rules = load_category_rules()
 if 'verified_history' not in st.session_state:
     st.session_state.verified_history = []
+if 'column_keywords' not in st.session_state:
+    st.session_state.column_keywords = {k: list(v) for k, v in COLUMN_KEYWORDS.items()}
 
 # --- ALWAYS DARK THEME ---
-badge_bg = "rgba(30,30,30,0.8)"
 card_bg = "#2d2d2d"
 card_text = "#e0e0e0"
 st.markdown("""
@@ -44,24 +45,72 @@ st.markdown("""
     [data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: #e0e0e0 !important; }
     [data-testid="stMetricDelta"] { color: #aaa !important; }
     .stDataFrame { background-color: #2d2d2d; }
+    [data-testid="stToggle"] { background-color: #3a3a3a; padding: 4px 10px; border-radius: 8px; border: 1px solid #555; margin: 3px 0; }
     </style>
 """, unsafe_allow_html=True)
-
-# Version badge
-st.markdown(
-    f"""
-    <div style="position:fixed; bottom:10px; left:10px; z-index:9999;
-        font-size:0.75em; color:#999; background:{badge_bg};
-        padding:2px 8px; border-radius:4px;">
-        {APP_VERSION}
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 # ==========================================
 # HELPERS
 # ==========================================
+
+_FIELD_LABELS = {
+    'date': 'Date', 'desc': 'Description', 'amt': 'Amount',
+    'source': 'Source', 'partner': 'Partner', 'cat': 'Category', 'comment': 'Comment'
+}
+
+@st.dialog("⚙️ Settings")
+def _open_settings_dialog():
+    st.subheader("Auto Detection")
+    st.caption("Keywords used to identify column types when uploading an Excel file. "
+               "Separate with commas. Changes apply to the next upload.")
+    with st.form("auto_detection_form_dialog"):
+        _new_kw = {}
+        for _f, _lbl in _FIELD_LABELS.items():
+            _cur = ", ".join(st.session_state.column_keywords.get(_f, []))
+            _new_kw[_f] = st.text_input(_lbl, value=_cur, key=f"kw_dlg_{_f}")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            if st.form_submit_button("💾 Save", use_container_width=True):
+                for _f, _v in _new_kw.items():
+                    st.session_state.column_keywords[_f] = [k.strip() for k in _v.split(",") if k.strip()]
+                st.toast("Keywords saved.")
+                st.rerun()
+        with _c2:
+            if st.form_submit_button("↩️ Defaults", use_container_width=True):
+                st.session_state.column_keywords = {k: list(v) for k, v in COLUMN_KEYWORDS.items()}
+                st.toast("Reset to defaults.")
+                st.rerun()
+
+    if st.session_state.get('setup_complete', False):
+        st.divider()
+        st.subheader("Category Rules")
+        st.caption("Learned automatically when you verify expenses.")
+        _rules = st.session_state.category_rules
+        _rules_filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "category_rules.csv")
+        _cb1, _cb2 = st.columns(2)
+        with _cb1:
+            if st.button("📂 Open in Excel", use_container_width=True,
+                         disabled=not os.path.exists(_rules_filepath), key="dlg_open_excel"):
+                os.startfile(_rules_filepath)
+        with _cb2:
+            if st.button("🔄 Reload Rules", use_container_width=True, key="dlg_reload_rules"):
+                st.session_state.category_rules = load_category_rules()
+                st.toast("Rules reloaded.")
+                st.rerun()
+        if _rules:
+            _search = st.text_input("🔍", placeholder="Search rules...",
+                                    label_visibility="collapsed", key="dlg_rules_search")
+            _rdf = pd.DataFrame([{"Description": k, "Category": v}
+                                  for k, v in sorted(_rules.items())])
+            if _search:
+                _mask = (_rdf["Description"].str.contains(_search, case=False, na=False) |
+                         _rdf["Category"].str.contains(_search, case=False, na=False))
+                _rdf = _rdf[_mask].reset_index(drop=True)
+            st.caption(f"{len(_rdf)} rule(s)")
+            st.dataframe(_rdf, use_container_width=True, hide_index=True)
+        else:
+            st.info("No rules yet.")
+
 
 def _apply_view(df: pd.DataFrame, view: str) -> pd.DataFrame:
     if view == "Sum by category":
@@ -81,6 +130,18 @@ def _apply_view(df: pd.DataFrame, view: str) -> pd.DataFrame:
 # ==========================================
 # FLOW CONTROL
 # ==========================================
+
+# Always-visible sidebar elements
+with st.sidebar:
+    if st.button("⚙️ Settings", key="sidebar_settings_btn", use_container_width=True):
+        _open_settings_dialog()
+    st.divider()
+    st.markdown(
+        f"<div style='position:fixed;bottom:10px;left:8px;font-size:0.72em;"
+        f"color:#888;background:rgba(30,30,30,0.85);padding:2px 8px;border-radius:4px;'>"
+        f"{APP_VERSION}</div>",
+        unsafe_allow_html=True,
+    )
 
 if not st.session_state.setup_complete:
     render_setup_page()
@@ -427,6 +488,27 @@ else:
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
             st.info("No rules yet. Rules are learned automatically as you verify expenses.")
+
+        st.divider()
+        st.subheader("Auto Detection")
+        st.caption("Keywords used to identify column types when uploading an Excel file. Separate multiple keywords with commas. Changes apply to the next upload.")
+
+        with st.form("auto_detection_form"):
+            _new_keywords = {}
+            for _field, _label in _FIELD_LABELS.items():
+                _current = ", ".join(st.session_state.column_keywords.get(_field, []))
+                _new_keywords[_field] = st.text_input(_label, value=_current, key=f"kw_input_{_field}")
+            _col_save, _col_reset = st.columns([1, 1])
+            with _col_save:
+                if st.form_submit_button("💾 Save Keywords", use_container_width=True):
+                    for _field, _val in _new_keywords.items():
+                        st.session_state.column_keywords[_field] = [k.strip() for k in _val.split(",") if k.strip()]
+                    st.toast("Auto-detection keywords saved.")
+            with _col_reset:
+                if st.form_submit_button("↩️ Reset to Defaults", use_container_width=True):
+                    st.session_state.column_keywords = {k: list(v) for k, v in COLUMN_KEYWORDS.items()}
+                    st.toast("Keywords reset to defaults.")
+                    st.rerun()
 
     # --- TAB 4: CATEGORY SUMMARY ---
     with tab_cat_summary:

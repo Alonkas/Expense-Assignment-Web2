@@ -17,16 +17,17 @@ SHARED_KEYWORDS = ['shared', 'משותף', 'common']
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
-def auto_detect_columns(df):
+def auto_detect_columns(df, keywords=None):
     """Match DataFrame column headers to known field names via keyword lookup."""
+    kw_map = COLUMN_KEYWORDS if keywords is None else keywords
     mapping = {}
     used = set()
-    for field, keywords in COLUMN_KEYWORDS.items():
+    for field, kw_list in kw_map.items():
         for col in df.columns:
             if col in used:
                 continue
             col_lower = str(col).strip().lower()
-            if any(kw in col_lower for kw in keywords):
+            if any(kw in col_lower for kw in kw_list):
                 mapping[field] = col
                 used.add(col)
                 break
